@@ -16,6 +16,7 @@ function App() {
       <Hero />
       <Features />
       <HowItWorks />
+      <Footer/>
     </div>
   );
 }

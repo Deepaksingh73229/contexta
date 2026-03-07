@@ -120,7 +120,19 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+}
+
+::-webkit-scrollbar {
+  /* Customize the scrollbar width */
+  width: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  /* Customize the scrollbar thumb */
+  background-color: #999DAA;
+  border-radius: 5px;
 }
