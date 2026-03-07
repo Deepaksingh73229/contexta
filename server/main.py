@@ -1,17 +1,25 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Import the router from your upload.py file
+from ingest import router as ingest_router
+from chat import router as chat_router
+
 # Initialize the app
-app = FastAPI()
+app = FastAPI(title="Contexta API", description="Local RAG Backend")
 
 # Add CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Connect the upload route to the main app
+app.include_router(ingest_router)
+app.include_router(chat_router)
 
 @app.get("/")
 def check_health():
