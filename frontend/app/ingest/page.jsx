@@ -50,7 +50,7 @@ const FileRow = ({ item, isProcessing, onRemove }) => {
       <button
         aria-label={`Remove ${item.file.name}`}
         onClick={() => onRemove(item.id)}
-        className="text-zinc-600 hover:text-red-400 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400 rounded"
+        className="text-neutral-600 hover:text-red-400 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400 rounded"
       >
         <X className="w-4 h-4" />
       </button>
@@ -60,28 +60,28 @@ const FileRow = ({ item, isProcessing, onRemove }) => {
   const rowAccent = {
     completed: 'border-l-emerald-500',
     error: 'border-l-red-500',
-    pending: 'border-l-zinc-700',
+    pending: 'border-l-neutral-700',
   }[item.status];
 
   return (
     <li
       className={`
         flex items-center gap-3 px-4 py-3
-        bg-zinc-900 border border-zinc-800 border-l-2 ${rowAccent}
+        bg-neutral-900 border border-neutral-800 border-l-2 ${rowAccent}
         rounded-sm transition-colors duration-200
       `}
     >
       {/* Icon */}
-      <span className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-sm shrink-0">
-        <FileText className="w-4 h-4 text-zinc-400" />
+      <span className="w-8 h-8 flex items-center justify-center bg-neutral-800 rounded-sm shrink-0">
+        <FileText className="w-4 h-4 text-neutral-400" />
       </span>
 
       {/* Meta */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-zinc-100 truncate leading-tight">
+        <p className="text-sm font-medium text-neutral-100 truncate leading-tight">
           {item.file.name}
         </p>
-        <p className="text-xs text-zinc-500 mt-0.5 font-mono">
+        <p className="text-xs text-neutral-500 mt-0.5 font-mono">
           {formatBytes(item.file.size)}
         </p>
       </div>
@@ -241,7 +241,7 @@ const UploadPage = () => {
 
           {/* Left — illustration + trust badge */}
           <aside className="flex flex-col gap-6">
-            <div className="rounded-sm overflow-hidden bg-zinc-900 border border-zinc-800 p-8 flex items-center justify-center">
+            <div className="rounded-sm overflow-hidden bg-neutral-900 border border-neutral-800 p-8 flex items-center justify-center">
               <Image
                 alt="Upload illustration"
                 src={uploadImg}
@@ -249,13 +249,13 @@ const UploadPage = () => {
               />
             </div>
 
-            <div className="flex items-start gap-3 border border-zinc-800 rounded-sm px-4 py-3 bg-zinc-900/60">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+            <div className="flex items-start gap-3 border border-purple-800/20 rounded-sm px-4 py-3 bg-neutral-100 dark:bg-neutral-900/60">
+              <ShieldCheck className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs font-semibold text-emerald-400 tracking-wide">
+                <p className="text-xs font-semibold text-purple-500 tracking-wide">
                   100% Local Processing
                 </p>
-                <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                <p className="text-xs text-neutral-700 dark:text-neutral-500 mt-0.5 leading-relaxed">
                   Documents never leave your infrastructure. All vectorisation happens on-device.
                 </p>
               </div>
@@ -265,11 +265,11 @@ const UploadPage = () => {
           {/* Right — upload card */}
           <section className="space-y-6">
             {/* Header row */}
-            <div className="flex items-baseline justify-between border-b border-zinc-800 pb-4">
-              <h2 className="text-lg font-bold text-zinc-100 tracking-tight">
+            <div className="flex items-baseline justify-between border-b border-neutral-800 pb-4">
+              <h2 className="text-lg font-bold text-neutral-800 dark:text-neutral-100 tracking-tight">
                 Upload Documents
               </h2>
-              <span className="text-xs text-zinc-600 font-mono">PDF · max 50 MB</span>
+              <span className="text-xs text-neutral-600 dark:text-neutral-200 font-mono">PDF · max 50 MB</span>
             </div>
 
             {/* Drop zone */}
@@ -286,10 +286,10 @@ const UploadPage = () => {
                 relative rounded-sm border-2 border-dashed px-8 py-14
                 flex flex-col items-center justify-center gap-3
                 cursor-pointer select-none transition-all duration-200 outline-none
-                focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950
+                focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950
                 ${isDragging
                   ? 'border-indigo-500 bg-indigo-950/30 scale-[1.01]'
-                  : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600 hover:bg-zinc-900/70'}
+                  : 'border-neutral-800 bg-neutral-500/20 hover:border-neutral-600 hover:bg-neutral-500/50'}
                 ${isProcessing ? 'pointer-events-none opacity-50' : ''}
               `}
             >
@@ -307,19 +307,19 @@ const UploadPage = () => {
               <span
                 className={`
                   w-14 h-14 rounded-full border flex items-center justify-center transition-colors duration-200
-                  ${isDragging ? 'border-indigo-500 bg-indigo-500/20' : 'border-zinc-700 bg-zinc-800'}
+                  ${isDragging ? 'border-indigo-500 bg-indigo-500/20' : 'border-neutral-700 bg-neutral-800'}
                 `}
               >
                 <UploadCloud
-                  className={`w-6 h-6 transition-colors duration-200 ${isDragging ? 'text-indigo-400' : 'text-zinc-400'}`}
+                  className={`w-6 h-6 transition-colors duration-200 ${isDragging ? 'text-indigo-400' : 'text-neutral-400'}`}
                 />
               </span>
 
               <div className="text-center">
-                <p className="text-sm font-medium text-zinc-200">
+                <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
                   {isDragging ? 'Release to add files' : 'Drag & drop PDFs here'}
                 </p>
-                <p className="text-xs text-zinc-600 mt-1">
+                <p className="text-xs text-neutral-600 mt-1">
                   or <span className="text-indigo-400 underline underline-offset-2">browse your computer</span>
                 </p>
               </div>
@@ -328,10 +328,10 @@ const UploadPage = () => {
             {/* Queue */}
             {files.length > 0 && (
               <div className="space-y-4">
-                <p className="text-xs font-mono tracking-widest text-zinc-500 uppercase flex items-center gap-2">
+                <p className="text-xs font-mono tracking-widest text-neutral-500 uppercase flex items-center gap-2">
                   <Database className="w-3.5 h-3.5" />
                   Processing Queue
-                  <span className="ml-auto tabular-nums text-zinc-600">{files.length} file{files.length !== 1 ? 's' : ''}</span>
+                  <span className="ml-auto tabular-nums text-neutral-600">{files.length} file{files.length !== 1 ? 's' : ''}</span>
                 </p>
 
                 <ul className="space-y-2">
@@ -358,7 +358,7 @@ const UploadPage = () => {
                       w-full h-12 text-sm font-bold tracking-wide
                       bg-indigo-600 hover:bg-indigo-500 text-white
                       rounded-sm transition-colors duration-150
-                      focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950
+                      focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950
                     "
                   >
                     <Database className="w-4 h-4 mr-2" />

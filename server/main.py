@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import the router from your upload.py file
 from ingest import router as ingest_router
 from chat import router as chat_router
+from citations import router as citations_router
 
 # Initialize the app
 app = FastAPI(title="Contexta API", description="Local RAG Backend")
@@ -20,6 +21,7 @@ app.add_middleware(
 # Connect the upload route to the main app
 app.include_router(ingest_router)
 app.include_router(chat_router)
+app.include_router(citations_router, prefix="/api")
 
 @app.get("/")
 def check_health():
