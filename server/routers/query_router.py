@@ -1,12 +1,7 @@
 """
-routers/query_router.py — HTTP endpoints for querying the knowledge base.
+routers/query_router.py — Query and document list endpoints.
 
-Thin router — all logic is in query_service and the core modules.
-
-Endpoints
----------
-  POST /api/query       Answer a natural-language question.
-  GET  /api/documents   List all ingested documents.
+Enterprise addition: GET /api/cache/stats
 """
 
 from __future__ import annotations
@@ -15,107 +10,80 @@ import logging
 
 from fastapi import APIRouter, status
 
-from models.schemas import DocumentInfo, DocumentListResponse, QueryRequest, QueryResponse
+from models.schemas import (
+    CacheStatsResponse,
+    DocumentInfo,
+    DocumentListResponse,
+    QueryRequest,
+    QueryResponse,
+)
 from services.ingestion_service import read_all_meta
 from services.query_service import answer_query
+from services import query_cache
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/api", tags=["Query"])
 
-
-# =============================================================================
-#  QUERY
-# =============================================================================
 
 @router.post(
     "/query",
     response_model=QueryResponse,
-    summary="Answer a natural-language question from the knowledge base",
     status_code=status.HTTP_200_OK,
 )
 async def query_endpoint(request: QueryRequest) -> QueryResponse:
     """
-    Search ingested documents and return a grounded answer with citations.
+    Answer a natural-language question.
 
-    Request body
-    ------------
-    ```json
-    {
-      "query": "What is the patient discharge procedure?",
-      "doc_ids": ["abc123", "def456"]   // optional; omit to search ALL docs
-    }
-    ```
+    Enterprise pipeline:
+      cache lookup → rewrite query → generate variants → beam search →
+      hybrid score → cross-encoder rerank → multi-query fusion →
+      context build → LLM answer → cache store.
 
-    Response body
-    -------------
-    ```json
-    {
-      "status": "success",
-      "answer": "Patients are discharged after ...",
-      "sources": [
-        {"doc_id": "abc123", "node_id": "0007",
-         "title": "Discharge Procedures", "filename": "policy.pdf"}
-      ],
-      "thinking": "The query asks about discharge ..."
-    }
-    ```
-
-    The `thinking` field contains the LLM's chain-of-thought from the tree
-    search phase.  It is intended for developer/audit use.  The frontend
-    may display or hide it depending on context.
+    The `thinking` field in the response includes:
+      - original query
+      - rewritten query
+      - all generated variants
     """
-    logger.info(
-        "Query request: query_len=%d  doc_ids=%s",
-        len(request.query),
-        request.doc_ids or "ALL",
-    )
+    logger.info("Query: len=%d  doc_ids=%s", len(request.query), request.doc_ids or "ALL")
     return await answer_query(request)
 
-
-# =============================================================================
-#  LIST DOCUMENTS
-# =============================================================================
 
 @router.get(
     "/documents",
     response_model=DocumentListResponse,
-    summary="List all ingested documents",
     status_code=status.HTTP_200_OK,
 )
 def list_documents() -> DocumentListResponse:
-    """
-    Return metadata for every document that has been successfully ingested.
-
-    This endpoint reads lightweight sidecar .meta.json files rather than
-    loading full tree indexes, so it is very fast even with thousands of
-    documents.
-
-    Response body
-    -------------
-    ```json
-    {
-      "status": "success",
-      "total": 2,
-      "documents": [
-        {"doc_id": "abc123", "filename": "policy.pdf", "nodes": 42},
-        {"doc_id": "def456", "filename": "manual.pdf", "nodes": 91}
-      ]
-    }
-    ```
-    """
+    """List all ingested documents (reads lightweight sidecar metadata)."""
     raw_metas = read_all_meta()
     documents = [
-        DocumentInfo(
-            doc_id   = m["doc_id"],
-            filename = m["filename"],
-            nodes    = m["nodes"],
-        )
+        DocumentInfo(doc_id=m["doc_id"], filename=m["filename"], nodes=m["nodes"])
         for m in raw_metas
     ]
+    return DocumentListResponse(status="success", documents=documents, total=len(documents))
 
-    return DocumentListResponse(
-        status    = "success",
-        documents = documents,
-        total     = len(documents),
-    )
+
+@router.get(
+    "/cache/stats",
+    response_model=CacheStatsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def cache_stats() -> CacheStatsResponse:
+    """Return query cache statistics."""
+    s = query_cache.stats()
+    return CacheStatsResponse(status="success", **s)
+
+
+@router.delete(
+    "/cache",
+    status_code=status.HTTP_200_OK,
+)
+def clear_cache() -> dict:
+    """Clear the entire query cache (admin endpoint)."""
+    from services.query_cache import _cache, _access_order, _save
+    import services.query_cache as qc
+    with qc._lock:
+        qc._cache.clear()
+        qc._access_order.clear()
+        qc._save()
+    return {"status": "success", "message": "Query cache cleared."}

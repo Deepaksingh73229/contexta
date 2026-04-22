@@ -1,10 +1,8 @@
 """
-config.py — Central configuration for the entire Contexta backend.
+config.py — Central configuration for the Contexta enterprise backend.
 
-Every path, model name, and tunable constant lives here.
-No other file should hardcode these values.  Import from this module instead.
-
-To change the LLM model, the storage directory, or any limit, edit ONE place.
+All paths, model names, tunable constants, and feature flags live here.
+No other file should hardcode these values.
 """
 
 from __future__ import annotations
@@ -12,51 +10,72 @@ from __future__ import annotations
 from pathlib import Path
 
 # ── Directory layout ───────────────────────────────────────────────────────────
-# All paths are anchored to the directory that contains this file.
-# This makes the app CWD-independent regardless of how it is launched.
-
 BASE_DIR: Path = Path(__file__).resolve().parent
 
-# Original uploaded files — never deleted, required for citation streaming.
-DOCS_DIR: Path = BASE_DIR / "documents"
+DOCS_DIR:  Path = BASE_DIR / "documents"
+TREE_DIR:  Path = BASE_DIR / "tree_indexes"
+CACHE_DIR: Path = BASE_DIR / "query_cache"
 
-# One JSON tree-index per ingested document.
-TREE_DIR: Path = BASE_DIR / "tree_indexes"
-
-# Ensure both directories exist at import time.
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 TREE_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Ollama LLM ─────────────────────────────────────────────────────────────────
-# The model must be pulled locally before first use:
-#   ollama pull llama3
-# Supported alternatives: mistral, phi3, gemma:4b, deepseek-r1:7b, etc.
-
 OLLAMA_MODEL: str = "gemma4:e2b"
 
-# Ollama generation options applied to every call.
 OLLAMA_OPTIONS: dict = {
-    "temperature": 0.1,     # near-deterministic; best for factual retrieval
-    "seed":        42,      # reproducible outputs across restarts
-    "num_ctx":     16384,   # context window in tokens (≈ chars / 4)
+    "temperature": 0.1,
+    "seed":        42,
+    "num_ctx":     16384,
 }
 
-# ── Upload limits ──────────────────────────────────────────────────────────────
+# ── Embedding model (offline, sentence-transformers) ──────────────────────────
+# Used for FAISS node indexing and query embedding.
+# Pull once:  python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
+EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+EMBEDDING_DIM:   int = 384   # bge-small output dimension
 
-MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024   # 50 MB hard cap
+# ── Upload limits ──────────────────────────────────────────────────────────────
+MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024   # 50 MB
 
 # ── Tree / chunking parameters ─────────────────────────────────────────────────
-
-# Characters sent to the LLM for summarisation per node.
-# Increase if sections are very long; decrease on low-RAM machines.
 MAX_SUMMARY_CHARS: int = 5_000
-
-# Characters of retrieved section content fed to the answer LLM.
-# Must fit comfortably within OLLAMA_OPTIONS["num_ctx"].
 MAX_CONTEXT_CHARS: int = 8_000
 
+# ── Retrieval parameters ───────────────────────────────────────────────────────
+# Beam search top-K per level
+BEAM_TOP_K_L1: int = 3   # chapter level
+BEAM_TOP_K_L2: int = 2   # section level
+BEAM_TOP_K_L3: int = 2   # subsection level
+
+# Hybrid scorer weights (must sum to 1.0)
+HYBRID_WEIGHT_SEMANTIC:  float = 0.50
+HYBRID_WEIGHT_BM25:      float = 0.30
+HYBRID_WEIGHT_METADATA:  float = 0.20
+
+# Two-stage retrieval
+RETRIEVAL_STAGE1_TOP_N: int = 20   # fast pass candidates
+RETRIEVAL_STAGE2_TOP_K: int = 5    # cross-encoder re-rank output
+
+# ── Query rewriting ────────────────────────────────────────────────────────────
+QUERY_REWRITE_ENABLED:    bool = True
+MULTI_QUERY_COUNT:        int  = 3    # number of query variants to generate
+MULTI_QUERY_ENABLED:      bool = True
+
+# ── Query path cache ───────────────────────────────────────────────────────────
+CACHE_ENABLED:      bool = True
+CACHE_MAX_ENTRIES:  int  = 1_000
+CACHE_TTL_SECONDS:  int  = 7 * 24 * 3600   # 7 days
+
+# ── Context builder ────────────────────────────────────────────────────────────
+CONTEXT_DEDUP_THRESHOLD: float = 0.92   # cosine sim above which a node is a duplicate
+CONTEXT_MERGE_SIBLINGS:  bool  = True
+
+# ── Cross-encoder re-ranking ───────────────────────────────────────────────────
+RERANKER_ENABLED: bool  = True
+RERANKER_MODEL:   str   = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
 # ── CORS ───────────────────────────────────────────────────────────────────────
-# Add your frontend origin(s) here.
 CORS_ORIGINS: list[str] = [
-    "http://localhost:3000",   # Next.js dev server
+    "http://localhost:3000",
 ]
