@@ -1,17 +1,14 @@
 """
 models/schemas.py — Pydantic request and response schemas.
-
-Enterprise additions:
-  - QueryResponse.thinking now includes rewrite + variant info.
-  - CacheStatsResponse for the new /api/cache/stats endpoint.
 """
 
 from __future__ import annotations
 
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-# ── Ingest ─────────────────────────────────────────────────────────────────────
+# ── Ingest (legacy) ────────────────────────────────────────────────────────────
 
 class IngestResponse(BaseModel):
     status:   str
@@ -19,6 +16,64 @@ class IngestResponse(BaseModel):
     filename: str
     nodes:    int
     message:  str
+
+
+# ── Async ingest task ──────────────────────────────────────────────────────────
+
+class TaskAcceptedResponse(BaseModel):
+    """Returned immediately on upload — pipeline runs in background."""
+    status:   str
+    task_id:  str
+    doc_id:   str
+    filename: str
+    message:  str
+
+
+class TaskStatusResponse(BaseModel):
+    """Live progress for one ingestion task."""
+    task_id:         str
+    doc_id:          str
+    filename:        str
+    status:          str
+    stage:           str
+    pct:             float
+    total_nodes:     int
+    nodes_done:      int
+    eta_seconds:     Optional[float]
+    current_node:    Optional[str]
+    elapsed_seconds: float
+    error:           Optional[str]
+    created_at:      float
+    started_at:      Optional[float]
+    completed_at:    Optional[float]
+    stage_label:     str = ""
+
+    def model_post_init(self, __context) -> None:
+        _labels = {
+            "queued":        "Queued",
+            "uploaded":      "File uploaded",
+            "markdown":      "Converting PDF",
+            "building_tree": "Building structure",
+            "tree_built":    "Structure ready",
+            "summarising":   "Summarising sections",
+            "summarised":    "Sections summarised",
+            "embedding":     "Generating embeddings",
+            "embedded":      "Embeddings ready",
+            "indexing":      "Building search index",
+            "indexed":       "Index ready",
+            "saving":        "Saving to disk",
+            "done":          "Complete",
+            "failed":        "Failed",
+            "cancelled":     "Cancelled",
+            "interrupted":   "Interrupted — will resume",
+        }
+        self.stage_label = _labels.get(self.stage, self.stage.replace("_", " ").capitalize())
+
+
+class TaskListResponse(BaseModel):
+    status: str
+    tasks:  list[TaskStatusResponse]
+    total:  int
 
 
 # ── Query ──────────────────────────────────────────────────────────────────────
@@ -46,7 +101,7 @@ class QueryResponse(BaseModel):
     status:   str
     answer:   str
     sources:  list[SourceCitation]
-    thinking: str   # includes: original query, rewritten query, variants
+    thinking: str
 
 
 # ── Documents list ─────────────────────────────────────────────────────────────

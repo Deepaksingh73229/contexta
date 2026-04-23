@@ -75,6 +75,17 @@ CONTEXT_MERGE_SIBLINGS:  bool  = True
 RERANKER_ENABLED: bool  = True
 RERANKER_MODEL:   str   = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+# ── Parallel ingestion ────────────────────────────────────────────────────────
+# Max documents ingested simultaneously (each runs in its own worker thread).
+MAX_PARALLEL_INGESTIONS: int = 2
+
+# Parallel LLM summary threads WITHIN one document's summarise stage.
+# Each thread calls Ollama independently. Reduce to 1 on low-RAM machines.
+SUMMARISE_WORKERS: int = 3
+
+# Task store: how many terminal tasks (done/failed/cancelled) to retain.
+TASK_HISTORY_LIMIT: int = 100
+
 # ── CORS ───────────────────────────────────────────────────────────────────────
 CORS_ORIGINS: list[str] = [
     "http://localhost:3000",
