@@ -1,13 +1,21 @@
 """
-services/query_service.py — Query orchestration service.
+services/query_service.py — Enterprise query orchestration.
 
-Handles both single-document and multi-document query workflows.
-The router calls these functions; they coordinate the core retriever
-and handle all file-system access (loading tree indexes, reading metadata).
+Integrates all enterprise retrieval improvements:
+
+  1. Query path cache (fast return for repeated queries)
+  2. Query rewriting (LLM aligns query to document vocabulary)
+  3. Multi-query generation (N diverse variants → higher recall)
+  4. Hierarchical beam search (fast, no LLM in retrieval loop)
+  5. Hybrid scoring (semantic + BM25 + metadata)
+  6. Cross-encoder re-ranking (high precision final pass)
+  7. Multi-query result fusion (union + max-score merge)
+  8. Context builder (dedup + parent-child pruning + trim)
+  9. LLM answer generation (grounded, no hallucination)
 
 Public surface
 --------------
-  answer_query(request)  → QueryResponse
+  answer_query(request) → QueryResponse
 """
 
 from __future__ import annotations
@@ -17,45 +25,21 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from config import TREE_DIR, DOCS_DIR, MAX_CONTEXT_CHARS
-from core.llm import call_llm
-from core.retriever import retrieve_and_answer, tree_search
+from config import TREE_DIR, RETRIEVAL_STAGE2_TOP_K
+from core.embeddings import load_faiss_index
+from core.query_processor import process_query
+from core.retriever import retrieve_multi_query, generate_answer, build_context
 from core.tree import load_tree, create_node_map
 from models.schemas import QueryRequest, QueryResponse, SourceCitation
-from services.ingestion_service import read_all_meta
+from services.ingestion_service import read_all_meta, get_doc_titles
+from services import query_cache
 
 logger = logging.getLogger(__name__)
 
-# ── Answer prompt (re-used for multi-document merge) ──────────────────────────
-_ANSWER_PROMPT = """\
-You are Contexta, a precise institutional knowledge assistant.
-Answer the question using ONLY the document excerpts provided below.
-Do NOT use any knowledge from your training data.
 
-Rules:
-1. If the answer is present, state it concisely and factually.
-2. If the answer cannot be found in the excerpts, respond with exactly:
-   "I could not find this information in the available documents."
-3. Do not guess. Do not apologise at length. Do not add filler phrases.
-
-Question: {query}
-
-Document excerpts:
-{context}
-
-Answer:
-"""
-
-# =============================================================================
-#  HELPERS
-# =============================================================================
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _resolve_tree_path(doc_id: str) -> Path:
-    """
-    Return the tree-index path for a given doc_id.
-
-    Raises HTTP 404 if the index does not exist (document not ingested).
-    """
     path = TREE_DIR / f"{doc_id}.json"
     if not path.exists():
         raise HTTPException(
@@ -65,11 +49,11 @@ def _resolve_tree_path(doc_id: str) -> Path:
     return path
 
 
+def _resolve_faiss_path(doc_id: str) -> Path:
+    return TREE_DIR / doc_id   # save_faiss_index adds .faiss / .ids suffixes
+
+
 def _filename_for_doc(doc_id: str) -> str:
-    """
-    Return the original filename for a doc_id by reading its sidecar meta file.
-    Falls back to doc_id if the sidecar is missing.
-    """
     import json
     meta_path = TREE_DIR / f"{doc_id}.meta.json"
     try:
@@ -79,30 +63,63 @@ def _filename_for_doc(doc_id: str) -> str:
 
 
 def _all_doc_ids() -> list[str]:
-    """Return doc_ids for every ingested document (reads TREE_DIR)."""
-    return [p.stem for p in sorted(TREE_DIR.glob("*.json"))]
+    return [p.stem for p in sorted(TREE_DIR.glob("*.json")) if not p.stem.endswith(".meta")]
 
 
-# =============================================================================
-#  SINGLE-DOCUMENT QUERY
-# =============================================================================
+# ── Single-document query ──────────────────────────────────────────────────────
 
-def _query_one(doc_id: str, query: str) -> tuple[str, list[SourceCitation], str]:
+def _query_one_doc(
+    doc_id:      str,
+    all_queries: list[str],
+    raw_query:   str,
+) -> tuple[str, list[SourceCitation], list[str]]:
     """
-    Run the full vectorless RAG pipeline against a single document.
+    Run the full enterprise pipeline against a single document.
 
     Returns
     -------
-    answer   : Grounded answer string.
-    sources  : List of SourceCitation objects with node + document info.
-    thinking : LLM reasoning trace from tree search.
+    (answer, sources, node_ids)
     """
-    tree_path = _resolve_tree_path(doc_id)
-    tree      = load_tree(tree_path)
-    filename  = _filename_for_doc(doc_id)
-    node_map  = create_node_map(tree)
+    tree_path  = _resolve_tree_path(doc_id)
+    faiss_path = _resolve_faiss_path(doc_id)
+    filename   = _filename_for_doc(doc_id)
 
-    answer, node_ids, thinking = retrieve_and_answer(tree, query)
+    tree = load_tree(tree_path)
+
+    # Load FAISS index; fall back gracefully if not found (legacy docs).
+    try:
+        faiss_index = load_faiss_index(faiss_path)
+    except FileNotFoundError:
+        logger.warning("FAISS index missing for doc_id=%s — using first-query only.", doc_id)
+        faiss_index = None
+
+    # Multi-query retrieval with fusion.
+    if faiss_index is not None:
+        ranked = retrieve_multi_query(
+            tree        = tree,
+            faiss_index = faiss_index,
+            all_queries = all_queries,
+            top_k       = RETRIEVAL_STAGE2_TOP_K,
+        )
+    else:
+        # Fallback: no FAISS — run single-query retrieval using embeddings inline.
+        from core.embeddings import embed_text
+        from core.embeddings import build_faiss_index as _build
+        all_nodes  = tree.all_nodes()
+        node_ids_e = [n.node_id for n in all_nodes if n.embedding]
+        embeds     = [n.embedding for n in all_nodes if n.embedding]
+        if node_ids_e:
+            faiss_index = _build(node_ids_e, embeds)
+        ranked = retrieve_multi_query(
+            tree        = tree,
+            faiss_index = faiss_index,
+            all_queries = all_queries,
+            top_k       = RETRIEVAL_STAGE2_TOP_K,
+        ) if faiss_index else []
+
+    node_ids  = [nid for nid, _ in ranked]
+    node_map  = create_node_map(tree)
+    answer    = generate_answer(node_map, node_ids, raw_query)
 
     sources = [
         SourceCitation(
@@ -115,33 +132,28 @@ def _query_one(doc_id: str, query: str) -> tuple[str, list[SourceCitation], str]
         if nid in node_map
     ]
 
-    return answer, sources, thinking
+    return answer, sources, node_ids
 
 
-# =============================================================================
-#  MULTI-DOCUMENT QUERY
-# =============================================================================
+# ── Multi-document query ───────────────────────────────────────────────────────
 
-def _query_all(doc_ids: list[str], query: str) -> tuple[str, list[SourceCitation], str]:
+def _query_all_docs(
+    doc_ids:     list[str],
+    all_queries: list[str],
+    raw_query:   str,
+) -> tuple[str, list[SourceCitation], list[str]]:
     """
-    Search across multiple documents and merge results into one answer.
+    Search across multiple documents and merge into one grounded answer.
 
-    Strategy
-    --------
-    1.  Run tree_search independently on each document.
-        (Only tree_search, not retrieve_and_answer, so we can collect and
-         merge nodes from all documents before generating a single answer.)
-    2.  Collect the selected nodes from every document.
-    3.  Concatenate all retrieved sections into one context (capped at
-        MAX_CONTEXT_CHARS so we don't blow the context window).
-    4.  Generate a single merged answer from the combined context.
-
-    This avoids generating N separate answers and then trying to merge them,
-    which would require a second LLM call and introduce stitching errors.
+    Strategy:
+    1. Run multi-query retrieval per document.
+    2. Collect all (node_id, score) pairs from all documents.
+    3. Sort globally by score.
+    4. Build merged context and generate one answer.
     """
-    all_context_parts: list[str]       = []
-    all_sources:       list[SourceCitation] = []
-    all_thinking:      list[str]       = []
+    all_sources:  list[SourceCitation] = []
+    global_nodes: dict[str, tuple[float, str, str]] = {}   # node_id → (score, doc_id, filename)
+    all_node_maps: dict[str, dict] = {}
 
     for doc_id in doc_ids:
         index_path = TREE_DIR / f"{doc_id}.json"
@@ -150,63 +162,83 @@ def _query_all(doc_ids: list[str], query: str) -> tuple[str, list[SourceCitation
             continue
 
         try:
-            tree     = load_tree(index_path)
-            filename = _filename_for_doc(doc_id)
-            node_map = create_node_map(tree)
+            tree      = load_tree(index_path)
+            filename  = _filename_for_doc(doc_id)
+            node_map  = create_node_map(tree)
+            all_node_maps[doc_id] = node_map
 
-            node_ids, thinking = tree_search(tree, query)
-            all_thinking.append(f"[{filename}]\n{thinking}")
+            faiss_path = _resolve_faiss_path(doc_id)
+            try:
+                faiss_index = load_faiss_index(faiss_path)
+            except FileNotFoundError:
+                from core.embeddings import build_faiss_index as _build
+                all_nodes_e = tree.all_nodes()
+                node_ids_e  = [n.node_id for n in all_nodes_e if n.embedding]
+                embeds      = [n.embedding for n in all_nodes_e if n.embedding]
+                faiss_index = _build(node_ids_e, embeds) if node_ids_e else None
 
-            for nid in node_ids:
-                if nid in node_map:
-                    all_context_parts.append(node_map[nid].content)
-                    all_sources.append(
-                        SourceCitation(
-                            doc_id   = doc_id,
-                            node_id  = nid,
-                            title    = node_map[nid].title,
-                            filename = filename,
-                        )
-                    )
+            if faiss_index is None:
+                continue
+
+            ranked = retrieve_multi_query(
+                tree        = tree,
+                faiss_index = faiss_index,
+                all_queries = all_queries,
+                top_k       = RETRIEVAL_STAGE2_TOP_K,
+            )
+
+            for nid, score in ranked:
+                if nid not in global_nodes or score > global_nodes[nid][0]:
+                    global_nodes[nid] = (score, doc_id, filename)
+
         except Exception as exc:
             logger.exception("Error searching doc_id=%s: %s", doc_id, exc)
-            continue
 
-    merged_thinking = "\n\n".join(all_thinking) or "No documents could be searched."
-
-    if not all_context_parts:
+    if not global_nodes:
         return (
             "I could not find this information in the available documents.",
-            [],
-            merged_thinking,
+            [], [],
         )
 
-    # Merge and truncate context, then generate one answer.
-    context = "\n\n---\n\n".join(all_context_parts)[:MAX_CONTEXT_CHARS]
-    prompt  = _ANSWER_PROMPT.format(query=query, context=context)
-    answer  = call_llm(prompt)
+    # Sort globally by score; take top K.
+    sorted_nodes = sorted(global_nodes.items(), key=lambda x: x[1][0], reverse=True)
+    top_nodes    = sorted_nodes[:RETRIEVAL_STAGE2_TOP_K]
+    top_node_ids = [nid for nid, _ in top_nodes]
 
-    return answer, all_sources, merged_thinking
+    # Build merged context using nodes from their respective documents.
+    from core.retriever import build_context as _build_ctx
+    from core.tree import TreeNode
+
+    merged_map: dict[str, TreeNode] = {}
+    for nid, (score, doc_id, filename) in top_nodes:
+        nm = all_node_maps.get(doc_id, {})
+        if nid in nm:
+            merged_map[nid] = nm[nid]
+            all_sources.append(SourceCitation(
+                doc_id   = doc_id,
+                node_id  = nid,
+                title    = nm[nid].title,
+                filename = filename,
+            ))
+
+    answer = generate_answer(merged_map, top_node_ids, raw_query)
+    return answer, all_sources, top_node_ids
 
 
-# =============================================================================
-#  PUBLIC SERVICE FUNCTION
-# =============================================================================
+# ── Public service function ────────────────────────────────────────────────────
 
 async def answer_query(request: QueryRequest) -> QueryResponse:
     """
-    Route and execute a user query.
+    Route and execute a user query through the full enterprise pipeline.
 
-    If request.doc_ids is non-empty, search only those documents.
-    If request.doc_ids is empty, search ALL ingested documents.
-
-    Parameters
-    ----------
-    request : Validated QueryRequest (query string + optional doc_id list).
-
-    Returns
-    -------
-    QueryResponse with answer, sources, and thinking.
+    Enterprise flow
+    ---------------
+    1.  Cache lookup  — if hit, return immediately.
+    2.  Query processing — rewrite + multi-query generation.
+    3.  Retrieval — beam search + hybrid score + rerank (per doc).
+    4.  Multi-query fusion — merge results across query variants.
+    5.  Answer generation — LLM on curated context only.
+    6.  Cache store — persist for future repeated queries.
     """
     try:
         target_ids = request.doc_ids or _all_doc_ids()
@@ -219,17 +251,78 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
                 thinking = "",
             )
 
-        # ── Single document: use the optimised single-doc path ────────────────
-        if len(target_ids) == 1:
-            answer, sources, thinking = _query_one(target_ids[0], request.query)
+        # ── 1. Cache lookup ───────────────────────────────────────────────────
+        hit = query_cache.get(request.query, doc_ids=target_ids)
+        if hit:
+            # Reconstruct sources from cached node_ids.
+            sources: list[SourceCitation] = []
+            for doc_id in hit.doc_ids:
+                tree_path = TREE_DIR / f"{doc_id}.json"
+                if not tree_path.exists():
+                    continue
+                tree     = load_tree(tree_path)
+                node_map = create_node_map(tree)
+                filename = _filename_for_doc(doc_id)
+                for nid in hit.node_ids:
+                    if nid in node_map:
+                        sources.append(SourceCitation(
+                            doc_id=doc_id, node_id=nid,
+                            title=node_map[nid].title, filename=filename,
+                        ))
 
-        # ── Multiple documents: merge-search path ─────────────────────────────
-        else:
-            answer, sources, thinking = _query_all(target_ids, request.query)
+            # Re-generate answer from cached nodes (fresh, no stale text).
+            if sources:
+                merged_map = {}
+                for src in sources:
+                    tree = load_tree(TREE_DIR / f"{src.doc_id}.json")
+                    merged_map.update(create_node_map(tree))
+                answer = generate_answer(merged_map, hit.node_ids, request.query)
+
+                return QueryResponse(
+                    status   = "success",
+                    answer   = answer,
+                    sources  = sources,
+                    thinking = f"[Cache hit — age {hit.age_s:.0f}s] "
+                               f"Query rewritten and variants generated at first call.",
+                )
+
+        # ── 2. Query processing (rewrite + multi-query) ───────────────────────
+        doc_titles = get_doc_titles()
+        processed  = process_query(request.query, doc_context=doc_titles)
+
+        thinking = (
+            f"Original: {processed.original}\n"
+            f"Rewritten: {processed.rewritten}\n"
+            f"Variants ({len(processed.variants)}): "
+            + " | ".join(processed.variants)
+        )
 
         logger.info(
-            "Query complete: query_len=%d  docs=%d  sources=%d",
-            len(request.query), len(target_ids), len(sources),
+            "Query processed: original=%r  queries=%d",
+            request.query[:60], len(processed.all_queries),
+        )
+
+        # ── 3–5. Retrieval + answer ───────────────────────────────────────────
+        if len(target_ids) == 1:
+            answer, sources, node_ids = _query_one_doc(
+                target_ids[0], processed.all_queries, processed.rewritten,
+            )
+        else:
+            answer, sources, node_ids = _query_all_docs(
+                target_ids, processed.all_queries, processed.rewritten,
+            )
+
+        # ── 6. Cache store ────────────────────────────────────────────────────
+        if node_ids:
+            query_cache.put(
+                raw_query = request.query,
+                node_ids  = node_ids,
+                doc_ids   = list({s.doc_id for s in sources}),
+            )
+
+        logger.info(
+            "Query complete: docs=%d  sources=%d  queries_used=%d",
+            len(target_ids), len(sources), len(processed.all_queries),
         )
 
         return QueryResponse(
@@ -240,7 +333,7 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
         )
 
     except HTTPException:
-        raise   # pass through 404s from _resolve_tree_path
+        raise
 
     except Exception as exc:
         logger.exception("Query service error: query=%r", request.query[:60])

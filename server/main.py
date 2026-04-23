@@ -1,17 +1,7 @@
 """
-main.py — Contexta FastAPI application entry point.
+main.py — Contexta Enterprise FastAPI application.
 
-This file does THREE things only:
-  1. Create the FastAPI app instance.
-  2. Register middleware (CORS).
-  3. Include all routers.
-
-No business logic, no imports of core modules.  If you need to add a new
-feature area, create a new router in routers/ and add one include_router
-line here.
-
-Run
----
+Run:
     uvicorn main:app --reload --port 8000
 """
 
@@ -23,11 +13,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import CORS_ORIGINS
-from routers.ingest_router   import router as ingest_router
-from routers.query_router    import router as query_router
+from routers.ingest_router    import router as ingest_router
+from routers.query_router     import router as query_router
 from routers.citations_router import router as citations_router
 
-# ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
@@ -35,14 +24,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("contexta")
 
-# ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title       = "Contexta API",
-    description = "Fully offline vectorless RAG backend for institutional knowledge management.",
-    version     = "2.0.0",
+    title       = "Contexta Enterprise API",
+    description = (
+        "Fully offline enterprise RAG backend.\n\n"
+        "**Retrieval pipeline**: query rewrite → multi-query → beam search → "
+        "hybrid score → cross-encoder rerank → context build → LLM answer."
+    ),
+    version = "3.0.0",
 )
 
-# ── CORS ───────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = CORS_ORIGINS,
@@ -51,26 +42,30 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
-# ── Routers ────────────────────────────────────────────────────────────────────
-app.include_router(ingest_router)    # POST /api/ingest, GET /api/ingest/health
-app.include_router(query_router)     # POST /api/query,  GET /api/documents
-app.include_router(citations_router) # GET  /api/cite/{doc_id}
+app.include_router(ingest_router)
+app.include_router(query_router)
+app.include_router(citations_router)
 
-# ── Root endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/", tags=["Health"])
 def health_check() -> dict:
-    """Liveness probe — confirms the API is reachable."""
-    return {
-        "status":  "active",
-        "message": "Contexta API is running.",
-    }
+    return {"status": "active", "message": "Contexta Enterprise API is running.", "version": "3.0.0"}
 
 
 @app.get("/demo", tags=["Health"])
 def demo() -> dict:
-    """Quick sanity check for new developers."""
     return {
-        "result":  "Connection successful",
-        "project": "Contexta — Stop searching folders. Start finding answers.",
+        "result":   "Connection successful",
+        "project":  "Contexta Enterprise — Stop searching folders. Start finding answers.",
+        "pipeline": [
+            "Query rewriting",
+            "Multi-query generation",
+            "Hierarchical beam search (FAISS)",
+            "Hybrid scoring (semantic + BM25 + metadata)",
+            "Cross-encoder re-ranking",
+            "Multi-query fusion",
+            "Context builder (dedup + merge)",
+            "LLM answer generation",
+            "Query path cache (LRU + TTL)",
+        ],
     }
