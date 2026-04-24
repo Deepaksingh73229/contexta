@@ -1,16 +1,15 @@
 """
 routers/citations_router.py — Stream stored PDFs for inline citation preview.
-
-Permission guard: CITATIONS_VIEW (ADMIN, MANAGER, ANALYST, VIEWER)
 """
+
 from __future__ import annotations
+
 import logging
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status
+
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
-from auth.dependencies import require_permission
-from auth.permissions import Permission
-from auth.store import UserRecord
+
 from config import DOCS_DIR
 
 logger = logging.getLogger(__name__)
@@ -30,15 +29,8 @@ def _resolve_doc(doc_id: str) -> Path:
 
 
 @router.get("/{doc_id}", response_class=FileResponse)
-def serve_citation(
-    doc_id:       str,
-    current_user: UserRecord = Depends(require_permission(Permission.CITATIONS_VIEW)),
-) -> FileResponse:
-    """
-    Stream PDF for inline browser rendering.
-    Requires: citations:view (ALL roles)
-    """
+def serve_citation(doc_id: str) -> FileResponse:
+    """Stream the raw PDF for inline browser rendering."""
     pdf_path = _resolve_doc(doc_id)
-    logger.info("Citation: user=%s  doc_id=%s", current_user.username, doc_id)
-    return FileResponse(path=str(pdf_path), media_type=_PDF_MEDIA_TYPE,
-                        headers={"Content-Disposition": "inline"})
+    logger.info("Serving citation: doc_id=%s", doc_id)
+    return FileResponse(path=str(pdf_path), media_type=_PDF_MEDIA_TYPE, headers={"Content-Disposition": "inline"})

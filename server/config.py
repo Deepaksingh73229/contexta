@@ -6,8 +6,10 @@ No other file should hardcode these values.
 """
 
 from __future__ import annotations
-
 from pathlib import Path
+
+import os as _os
+import secrets as _secrets
 
 # ── Directory layout ───────────────────────────────────────────────────────────
 BASE_DIR: Path = Path(__file__).resolve().parent
@@ -20,8 +22,37 @@ DOCS_DIR.mkdir(parents=True, exist_ok=True)
 TREE_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Authentication ─────────────────────────────────────────────────────────────
+# Directory for auth data: users.json, audit.log, revoked_tokens.json.
+AUTH_DIR: Path = BASE_DIR / "auth_data"
+AUTH_DIR.mkdir(parents=True, exist_ok=True)
+
+# JWT algorithm.
+AUTH_ALGORITHM: str = "HS256"
+
+# Access token lifetime (minutes).
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+# Refresh token lifetime (days).
+AUTH_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+# Secret key for JWT signing.
+# Auto-generated on first run and written to AUTH_DIR/secret.key.
+# To rotate: delete the file and restart the server (all users must re-login).
+_SECRET_KEY_FILE: Path = AUTH_DIR / "secret.key"
+
+def _load_or_create_secret() -> str:
+    if _SECRET_KEY_FILE.exists():
+        return _SECRET_KEY_FILE.read_text().strip()
+    key = _secrets.token_hex(32)   # 256-bit secret
+    _SECRET_KEY_FILE.write_text(key)
+    _SECRET_KEY_FILE.chmod(0o600)  # owner read-only
+    return key
+
+AUTH_SECRET_KEY: str = _load_or_create_secret()
+
 # ── Ollama LLM ─────────────────────────────────────────────────────────────────
-OLLAMA_MODEL: str = "gemma4:e2b"
+OLLAMA_MODEL: str = "llama3.1:latest"
 
 OLLAMA_OPTIONS: dict = {
     "temperature": 0.1,

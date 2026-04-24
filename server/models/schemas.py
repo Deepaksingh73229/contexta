@@ -21,7 +21,6 @@ class IngestResponse(BaseModel):
 # ── Async ingest task ──────────────────────────────────────────────────────────
 
 class TaskAcceptedResponse(BaseModel):
-    """Returned immediately on upload — pipeline runs in background."""
     status:   str
     task_id:  str
     doc_id:   str
@@ -30,7 +29,6 @@ class TaskAcceptedResponse(BaseModel):
 
 
 class TaskStatusResponse(BaseModel):
-    """Live progress for one ingestion task."""
     task_id:         str
     doc_id:          str
     filename:        str
@@ -79,7 +77,7 @@ class TaskListResponse(BaseModel):
 # ── Query ──────────────────────────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=2000)
+    query:   str       = Field(..., min_length=1, max_length=2000)
     doc_ids: list[str] = Field(default_factory=list)
 
     @field_validator("query", mode="before")
@@ -98,10 +96,29 @@ class SourceCitation(BaseModel):
 
 
 class QueryResponse(BaseModel):
-    status:   str
-    answer:   str
-    sources:  list[SourceCitation]
-    thinking: str
+    """
+    Full query response — now includes multi-agent structured metadata.
+
+    Fields
+    ------
+    answer          : The main answer text (intent-formatted).
+    confidence      : HIGH | MEDIUM | LOW — how well the context supported the answer.
+    intent_type     : Classified query intent (DEFINITION, PROCEDURE, LOOKUP, etc.)
+    search_focus    : What the agents were searching for (1 sentence).
+    gaps            : Topics the documents did NOT cover (honest about limits).
+    sources         : Retrieved document sections with doc + node IDs.
+    thinking        : Full multi-agent reasoning trace.
+    elapsed_ms      : Total pipeline time in milliseconds.
+    """
+    status:       str
+    answer:       str
+    confidence:   str              = "MEDIUM"
+    intent_type:  str              = "LOOKUP"
+    search_focus: str              = ""
+    gaps:         list[str]        = Field(default_factory=list)
+    sources:      list[SourceCitation]
+    thinking:     str
+    elapsed_ms:   float            = 0.0
 
 
 # ── Documents list ─────────────────────────────────────────────────────────────

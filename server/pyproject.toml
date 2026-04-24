@@ -11,6 +11,11 @@ dependencies = [
     "python-multipart>=0.0.22",
     "aiofiles>=25.1.0",
 
+    # ── Authentication ─────────────────────────────────────────────────────────
+    "passlib[bcrypt]>=1.7.4",          # bcrypt password hashing (offline)
+    "bcrypt==4.0.1",                   # passlib 1.7.4 compatibility (avoid bcrypt 5.x breakage)
+    "python-jose[cryptography]>=3.3.0", # JWT signing/verification (offline)
+
     # ── LLM (local Ollama) ─────────────────────────────────────────────────────
     "ollama>=0.4.0",
 
