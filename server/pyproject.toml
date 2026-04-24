@@ -1,6 +1,6 @@
 [project]
 name = "contexta-enterprise"
-version = "3.0.0"
+version = "3.1.0"
 description = "Contexta — Fully offline enterprise RAG backend"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,6 +11,11 @@ dependencies = [
     "python-multipart>=0.0.22",
     "aiofiles>=25.1.0",
 
+    # ── Authentication ─────────────────────────────────────────────────────────
+    "passlib[bcrypt]>=1.7.4",          # bcrypt password hashing (offline)
+    "bcrypt==4.0.1",                   # passlib 1.7.4 compatibility (avoid bcrypt 5.x breakage)
+    "python-jose[cryptography]>=3.3.0", # JWT signing/verification (offline)
+
     # ── LLM (local Ollama) ─────────────────────────────────────────────────────
     "ollama>=0.4.0",
 
@@ -19,14 +24,10 @@ dependencies = [
     "pypdf>=6.7.5",
     "langchain-text-splitters>=1.1.1",
 
-    # ── Embeddings + FAISS (enterprise additions) ──────────────────────────────
-    "sentence-transformers>=3.0.0",   # offline embedding + cross-encoder rerank
-    "faiss-cpu>=1.8.0",               # FAISS vector index (CPU-only, no GPU required)
+    # ── Embeddings + FAISS + cross-encoder ────────────────────────────────────
+    "sentence-transformers>=3.0.0",
+    "faiss-cpu>=1.8.0",
     "numpy>=1.26.0",
-
-    # ── BM25 keyword scoring ───────────────────────────────────────────────────
-    # Using built-in _BM25 implementation (no extra dep needed).
-    # Optionally: "rank-bm25>=0.2.2"
 
     # ── Validation ────────────────────────────────────────────────────────────
     "pydantic>=2.0.0",

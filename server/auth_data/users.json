@@ -1,0 +1,16 @@
+{
+  "15fa24cc295947929a97f35bf2a26eec": {
+    "user_id": "15fa24cc295947929a97f35bf2a26eec",
+    "username": "admin",
+    "email": "admin@local",
+    "full_name": "System Administrator",
+    "role": "admin",
+    "password_hash": "$2b$12$86zjvPcbVKAOAe9riPJv7eOG2rGN/0l5UdtpHqlDmr8HxwvHZXHJW",
+    "is_active": true,
+    "created_at": 1777013604.4576204,
+    "created_by": "system",
+    "updated_at": 1777013604.4576204,
+    "last_login": null,
+    "login_count": 0
+  }
+}
