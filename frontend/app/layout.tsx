@@ -1,45 +1,37 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import Navbar from "@/components/Navbar";
-import { ThemeProvider } from "@/components/theme-provider";
+// app/layout.tsx — Root layout: providers, fonts, theme
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import { ThemeProvider } from "next-themes"
+import { ReduxProvider } from "@/lib/providers"
+import Navbar from "@/components/Navbar"
+// import { Toaster } from "@/components/ui/toaster"
+import "./globals.css"
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 
 export const metadata: Metadata = {
-  title: "Contexta",
-  description: "Stop searching folders - Start finding answers",
-};
+  title: { default: "Contexta", template: "%s | Contexta" },
+  description: "Stop searching folders. Start finding answers.",
+  icons: { icon: "/favicon.ico" },
+}
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <Navbar />
-
-          {children}
-        </ThemeProvider>
+    <html lang="en" suppressHydrationWarning className={inter.variable}>
+      <body className="min-h-screen bg-background font-sans antialiased">
+        <ReduxProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {/* <Navbar /> */}
+            {children}
+            {/* <Toaster /> */}
+          </ThemeProvider>
+        </ReduxProvider>
       </body>
     </html>
-  );
+  )
 }

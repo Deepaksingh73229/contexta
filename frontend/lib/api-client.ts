@@ -9,7 +9,7 @@
 // ============================================================
 
 import { API_CONFIG, ENDPOINTS } from "@/config/api.config"
-import type { ApiError, TokenResponse } from "@/types"
+import type { TokenResponse } from "@/types"
 
 // ── Token helpers (localStorage) ─────────────────────────────
 
@@ -93,20 +93,45 @@ async function refreshAccessToken(): Promise<string> {
 function buildHeaders(
     extra: Record<string, string> = {},
     isJson = true,
+    includeAuth = true,
 ): Record<string, string> {
     const headers: Record<string, string> = { ...extra }
     const token = tokenStore.getAccess()
-    if (token) headers["Authorization"] = `Bearer ${token}`
+    if (includeAuth && token) headers["Authorization"] = `Bearer ${token}`
     if (isJson) headers["Content-Type"] = "application/json"
     return headers
 }
 
 // ── Parse error response ──────────────────────────────────────
 
+function formatErrorDetail(detail: unknown, fallback: string): string {
+    if (typeof detail === "string") return detail
+
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .map((item) => {
+                if (typeof item === "string") return item
+                if (item && typeof item === "object" && "msg" in item) {
+                    return String((item as { msg: unknown }).msg)
+                }
+                return null
+            })
+            .filter(Boolean)
+
+        return messages.length > 0 ? messages.join("; ") : fallback
+    }
+
+    if (detail && typeof detail === "object" && "msg" in detail) {
+        return String((detail as { msg: unknown }).msg)
+    }
+
+    return fallback
+}
+
 async function parseError(res: Response): Promise<ApiClientError> {
     try {
         const body = await res.json()
-        return new ApiClientError(res.status, body.detail ?? res.statusText)
+        return new ApiClientError(res.status, formatErrorDetail(body.detail, res.statusText))
     } catch {
         return new ApiClientError(res.status, res.statusText)
     }
@@ -158,7 +183,7 @@ async function request<T>(
 
     const url = `${API_CONFIG.BASE_URL}${endpoint}`
     const isJson = !(body instanceof FormData)
-    const headers = skipAuth ? extraHeaders : buildHeaders(extraHeaders, isJson)
+    const headers = buildHeaders(extraHeaders, isJson, !skipAuth)
     if (!isJson) delete headers["Content-Type"] // let browser set multipart boundary
 
     const init: RequestInit = {

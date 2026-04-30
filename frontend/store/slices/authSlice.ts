@@ -148,7 +148,11 @@ export const selectIsAuthenticated = (s: RootState) => s.auth.isAuthenticated
 export const selectAuthStatus = (s: RootState) => s.auth.status
 export const selectAuthError = (s: RootState) => s.auth.error
 export const selectRole = (s: RootState) => s.auth.user?.role ?? null
-export const selectPermissions = (s: RootState) => s.auth.user?.permissions ?? []
+// Return a stable empty array when no permissions exist to avoid
+// creating a new array on every selector call (prevents unnecessary
+// re-renders / memoization warnings).
+const EMPTY_PERMISSIONS: Permission[] = []
+export const selectPermissions = (s: RootState) => s.auth.user?.permissions ?? EMPTY_PERMISSIONS
 
 /** Returns true if the current user has the given permission */
 export const selectHasPermission =

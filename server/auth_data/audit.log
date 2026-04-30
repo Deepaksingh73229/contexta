@@ -1,0 +1,4 @@
+{"ts": 1777541171.5625467, "user_id": "15fa24cc295947929a97f35bf2a26eec", "action": "auth.login", "detail": "User 'admin' logged in"}
+{"ts": 1777541686.0719264, "user_id": "15fa24cc295947929a97f35bf2a26eec", "action": "user.update", "detail": "Updated user 'admin': ['password_hash']"}
+{"ts": 1777541686.0737636, "user_id": "15fa24cc295947929a97f35bf2a26eec", "action": "admin.password_reset", "detail": "Admin 'admin' reset password for user 'admin'"}
+{"ts": 1777541728.0826387, "user_id": "15fa24cc295947929a97f35bf2a26eec", "action": "query.execute", "detail": "Query by 'admin': hi"}
