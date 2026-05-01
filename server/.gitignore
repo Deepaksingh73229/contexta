@@ -9,3 +9,12 @@ wheels/
 # Virtual environments
 .venv
 .env*
+
+auth_data
+auth_data*
+auth_data/
+
+documents/
+query_cache/
+tasks/
+tree_indexes/

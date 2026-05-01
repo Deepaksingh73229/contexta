@@ -21,16 +21,16 @@ interface AuthState {
     status: "idle" | "loading" | "succeeded" | "failed"
     error: string | null
     isAuthenticated: boolean
+    hasHydrated: boolean
 }
 
-const cachedUser = authService.getCachedUser()
-
 const initialState: AuthState = {
-    user: cachedUser,
+    user: null,
     profile: null,
     status: "idle",
     error: null,
-    isAuthenticated: authService.isAuthenticated(),
+    isAuthenticated: false,
+    hasHydrated: false,
 }
 
 // ── Thunks ────────────────────────────────────────────────────
@@ -85,6 +85,17 @@ const authSlice = createSlice({
         clearError(state) {
             state.error = null
         },
+        hydrateAuth(
+            state,
+            action: PayloadAction<{
+                user: AuthState["user"]
+                isAuthenticated: boolean
+            }>,
+        ) {
+            state.user = action.payload.user
+            state.isAuthenticated = action.payload.isAuthenticated
+            state.hasHydrated = true
+        },
     },
     extraReducers: (builder) => {
         // ── login ──────────────────────────────────────────────
@@ -135,7 +146,7 @@ const authSlice = createSlice({
     },
 })
 
-export const { sessionExpired, clearError } = authSlice.actions
+export const { sessionExpired, clearError, hydrateAuth } = authSlice.actions
 export default authSlice.reducer
 
 // ── Selectors ─────────────────────────────────────────────────
@@ -147,6 +158,7 @@ export const selectProfile = (s: RootState) => s.auth.profile
 export const selectIsAuthenticated = (s: RootState) => s.auth.isAuthenticated
 export const selectAuthStatus = (s: RootState) => s.auth.status
 export const selectAuthError = (s: RootState) => s.auth.error
+export const selectAuthHasHydrated = (s: RootState) => s.auth.hasHydrated
 export const selectRole = (s: RootState) => s.auth.user?.role ?? null
 // Return a stable empty array when no permissions exist to avoid
 // creating a new array on every selector call (prevents unnecessary

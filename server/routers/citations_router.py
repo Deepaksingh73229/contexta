@@ -8,8 +8,8 @@ import logging
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
-from auth.dependencies import require_permission
-from auth.permissions import Permission
+from auth.dependencies import get_current_user_for_embed
+from auth.permissions import Permission, has_permission
 from auth.store import UserRecord
 from config import DOCS_DIR
 
@@ -32,12 +32,18 @@ def _resolve_doc(doc_id: str) -> Path:
 @router.get("/{doc_id}", response_class=FileResponse)
 def serve_citation(
     doc_id:       str,
-    current_user: UserRecord = Depends(require_permission(Permission.CITATIONS_VIEW)),
+    current_user: UserRecord = Depends(get_current_user_for_embed),
 ) -> FileResponse:
     """
     Stream PDF for inline browser rendering.
     Requires: citations:view (ALL roles)
     """
+    if not has_permission(current_user.role, Permission.CITATIONS_VIEW):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied. Your role does not have 'citations:view' access.",
+        )
+
     pdf_path = _resolve_doc(doc_id)
     logger.info("Citation: user=%s  doc_id=%s", current_user.username, doc_id)
     return FileResponse(path=str(pdf_path), media_type=_PDF_MEDIA_TYPE,

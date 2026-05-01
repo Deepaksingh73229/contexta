@@ -15,7 +15,7 @@ import type { TaskStatusResponse, TaskAcceptedResponse } from "@/types"
 
 export type UploadState =
     | { phase: "idle" }
-    | { phase: "validating" }
+    | { phase: "validating"; filename: string }
     | { phase: "uploading"; progress: number; filename: string }
     | { phase: "accepted"; task: TaskAcceptedResponse }
     | { phase: "error"; message: string }
@@ -53,7 +53,7 @@ export function useUpload(options: UseUploadOptions = {}) {
             if (!file) return
 
             // Validate
-            setState({ phase: "validating" })
+            setState({ phase: "validating", filename: file.name })
             const validationError = validatePDFFile(file)
             if (validationError) {
                 setState({ phase: "error", message: validationError })

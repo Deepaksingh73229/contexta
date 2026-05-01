@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/shared/EmptyState"
 import { MessageSquare, Sparkles } from "lucide-react"
 
 export function QueryInterface() {
-    const { currentResult, isQuerying, queryStatus, history, isSidebarOpen } = useQuery()
+    const { currentResult, isQuerying, status, history, isSidebarOpen } = useQuery()
 
     return (
         <div className="flex h-full w-full bg-[#FAFAFA] dark:bg-[#0A0A0A] relative overflow-hidden">
@@ -23,7 +23,7 @@ export function QueryInterface() {
 
                 {/* Scrollable Content Area */}
                 <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-200 dark:scrollbar-thumb-neutral-800 scroll-smooth pb-32">
-                    {queryStatus === "idle" && !currentResult ? (
+                    {status === "idle" && !currentResult ? (
                         <div className="flex h-full flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 duration-700 ease-out">
                             {/* Decorative background glow for empty state */}
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[500px] bg-violet-400/10 dark:bg-violet-600/10 blur-[100px] rounded-full pointer-events-none" />

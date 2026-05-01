@@ -36,7 +36,7 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from auth.permissions import Permission, has_permission
@@ -51,25 +51,16 @@ _bearer = HTTPBearer(auto_error=False)
 
 # ── Core dependency ────────────────────────────────────────────────────────────
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> UserRecord:
+def get_current_user_from_access_token(token: str) -> UserRecord:
     """
-    Validate the Bearer token and return the authenticated user.
+    Validate a raw access token and return the authenticated user.
 
     Raises
     ------
-    HTTP 401 : No token, invalid token, expired token, or revoked token.
+    HTTP 401 : Invalid token, expired token, or revoked token.
     HTTP 401 : User account is inactive or deleted.
     """
-    if credentials is None:
-        raise HTTPException(
-            status_code = status.HTTP_401_UNAUTHORIZED,
-            detail      = "Authentication required. Provide a Bearer token.",
-            headers     = {"WWW-Authenticate": "Bearer"},
-        )
-
-    payload: TokenPayload | None = verify_token(credentials.credentials, expected_type="access")
+    payload: TokenPayload | None = verify_token(token, expected_type="access")
 
     if payload is None:
         raise HTTPException(
@@ -100,6 +91,49 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> UserRecord:
+    """
+    Validate the Bearer token and return the authenticated user.
+
+    Raises
+    ------
+    HTTP 401 : No token, invalid token, expired token, or revoked token.
+    HTTP 401 : User account is inactive or deleted.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code = status.HTTP_401_UNAUTHORIZED,
+            detail      = "Authentication required. Provide a Bearer token.",
+            headers     = {"WWW-Authenticate": "Bearer"},
+        )
+
+    return get_current_user_from_access_token(credentials.credentials)
+
+
+def get_current_user_for_embed(
+    token: str | None = Query(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> UserRecord:
+    """
+    Authenticate browser embeds that cannot attach Authorization headers.
+    Prefer the Bearer header when present; otherwise accept an access token
+    from the query string for iframe/new-tab citation previews.
+    """
+    if credentials is not None:
+        return get_current_user_from_access_token(credentials.credentials)
+
+    if token:
+        return get_current_user_from_access_token(token)
+
+    raise HTTPException(
+        status_code = status.HTTP_401_UNAUTHORIZED,
+        detail      = "Authentication required. Provide a Bearer token.",
+        headers     = {"WWW-Authenticate": "Bearer"},
+    )
 
 
 # ── Permission guard factory ───────────────────────────────────────────────────
