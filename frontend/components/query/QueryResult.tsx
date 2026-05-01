@@ -10,22 +10,30 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { CitationCard } from "./CitationCard"
 import { useQuery } from "@/lib/hooks"
+import type { QueryResponse } from "@/types"
 import {
     CONFIDENCE_COLORS, CONFIDENCE_BG, CONFIDENCE_LABELS,
     INTENT_LABELS, INTENT_ICONS, formatQueryTime,
 } from "@/utils"
 import { cn } from "@/utils/cn"
 
-export function QueryResult() {
+interface QueryResultProps {
+    result?: QueryResponse
+    query?: string
+}
+
+export function QueryResult({ result, query }: QueryResultProps) {
     const { currentResult, currentQuery } = useQuery()
+    const activeResult = result || currentResult
+    const activeQuery = query || currentQuery
     const [showThinking, setShowThinking] = useState(false)
 
-    if (!currentResult) return null
+    if (!activeResult) return null
 
     const {
         answer, confidence, intent_type, search_focus,
         gaps, sources, thinking, elapsed_ms,
-    } = currentResult
+    } = activeResult
 
     return (
         <div className="space-y-10 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 ease-out pb-8">
@@ -36,7 +44,7 @@ export function QueryResult() {
                     You
                 </div>
                 <h2 className="text-xl sm:text-2xl font-semibold leading-snug tracking-tight text-neutral-900 dark:text-white pt-1">
-                    {currentQuery}
+                    {activeQuery}
                 </h2>
             </div>
 

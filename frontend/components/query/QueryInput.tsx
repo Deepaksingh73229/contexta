@@ -17,7 +17,7 @@ export function QueryInput() {
         const el = textareaRef.current
         if (!el) return
         el.style.height = "auto"
-        el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+        el.style.height = `${Math.min(el.scrollHeight, 400)}px`
     }, [localValue])
 
     const handleSubmit = () => {
@@ -53,7 +53,7 @@ export function QueryInput() {
                     onKeyDown={handleKeyDown}
                     placeholder="Ask a question about your documents… (Shift+Enter for new line)"
                     className={cn(
-                        "min-h-[52px] max-h-40 w-full resize-none bg-transparent",
+                        "min-h-[52px] max-h-96 w-full resize-none bg-transparent",
                         "border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none",
                         "pr-14 pl-4 py-3.5 text-[15px] leading-relaxed text-neutral-900 dark:text-white",
                         "placeholder:text-neutral-400 dark:placeholder:text-neutral-500",

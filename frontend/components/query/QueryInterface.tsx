@@ -5,10 +5,10 @@ import { QueryInput } from "./QueryInput"
 import { QueryResult } from "./QueryResult"
 import { QueryHistory } from "./QueryHistory"
 import { DocumentFilter } from "./DocumentFilter"
-import { MessageSquare, Sparkles } from "lucide-react"
+import { MessageSquare, Sparkles, Loader2 } from "lucide-react"
 
 export function QueryInterface() {
-    const { currentResult, isQuerying, status, history, isSidebarOpen } = useQuery()
+    const { currentQuery, currentResult, isQuerying, status, history, isSidebarOpen } = useQuery()
 
     return (
         <div className="flex h-full w-full bg-[#FAFAFA] dark:bg-[#0A0A0A] relative overflow-hidden">
@@ -21,7 +21,7 @@ export function QueryInterface() {
 
                 {/* Scrollable Content Area */}
                 <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-200 dark:scrollbar-thumb-neutral-800 scroll-smooth pb-32">
-                    {status === "idle" && !currentResult ? (
+                    {status === "idle" && history.length === 0 && !currentResult ? (
                         <div className="flex h-full flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 duration-700 ease-out">
                             {/* Decorative background glow for empty state */}
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-125 bg-violet-400/10 dark:bg-violet-600/10 blur-[100px] rounded-full pointer-events-none" />
@@ -42,8 +42,58 @@ export function QueryInterface() {
                             </div>
                         </div>
                     ) : (
-                        <div className="mx-auto max-w-4xl px-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
-                            {currentResult && <QueryResult />}
+                        <div className="mx-auto max-w-4xl px-4 py-8 flex flex-col gap-12 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+                            {/* Render Chat History */}
+                            {history.slice().reverse().map((entry) => (
+                                <QueryResult key={entry.id} query={entry.query} result={entry.response} />
+                            ))}
+
+                            {/* Render Loading State */}
+                            {status === "loading" && (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="flex items-start gap-4 px-2 sm:px-4">
+                                        <div className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral-200 dark:bg-neutral-800 text-[13px] font-bold text-neutral-600 dark:text-neutral-300 shadow-inner">
+                                            You
+                                        </div>
+                                        <h2 className="text-xl sm:text-2xl font-semibold leading-snug tracking-tight text-neutral-900 dark:text-white pt-1">
+                                            {currentQuery}
+                                        </h2>
+                                    </div>
+                                    <div className="relative mt-10">
+                                        <div className="absolute -top-4 -left-2 sm:-left-5 size-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-violet-500/30 z-10 border-2 border-[#FAFAFA] dark:border-[#0A0A0A]">
+                                            <Sparkles className="size-5 animate-pulse" />
+                                        </div>
+                                        <div className="relative rounded-2xl sm:rounded-[24px] p-6 sm:p-8 bg-white/80 dark:bg-neutral-900/60 backdrop-blur-xl ring-1 ring-inset ring-neutral-200/80 dark:ring-white/10 shadow-sm">
+                                            <div className="flex items-center gap-3 text-neutral-500 dark:text-neutral-400">
+                                                <Loader2 className="size-5 animate-spin text-violet-500" />
+                                                <span className="text-[15px] animate-pulse">Running retrieval and generating answer...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Render Error State */}
+                            {status === "failed" && (
+                                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="flex items-start gap-4 px-2 sm:px-4">
+                                        <div className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral-200 dark:bg-neutral-800 text-[13px] font-bold text-neutral-600 dark:text-neutral-300 shadow-inner">
+                                            You
+                                        </div>
+                                        <h2 className="text-xl sm:text-2xl font-semibold leading-snug tracking-tight text-neutral-900 dark:text-white pt-1">
+                                            {currentQuery}
+                                        </h2>
+                                    </div>
+                                    <div className="relative mt-10">
+                                        <div className="absolute -top-4 -left-2 sm:-left-5 size-10 rounded-xl bg-red-500 text-white flex items-center justify-center shadow-lg shadow-red-500/30 z-10 border-2 border-[#FAFAFA] dark:border-[#0A0A0A]">
+                                            <MessageSquare className="size-5" />
+                                        </div>
+                                        <div className="relative rounded-2xl sm:rounded-[24px] p-6 sm:p-8 bg-red-50/80 dark:bg-red-950/20 backdrop-blur-xl ring-1 ring-inset ring-red-200 dark:ring-red-900/50 shadow-sm">
+                                            <p className="text-red-600 dark:text-red-400 font-medium">Failed to execute query. Please try again.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

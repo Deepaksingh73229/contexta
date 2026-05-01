@@ -65,7 +65,7 @@ def _load_or_create_secret() -> str:
 AUTH_SECRET_KEY: str = _load_or_create_secret()
 
 # ── Ollama LLM ────────────────────────────────────────────────────────────────
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
 OLLAMA_OPTIONS: dict = {
     "temperature": float(os.getenv("OLLAMA_OPTIONS_TEMPERATURE", "0.1")),
