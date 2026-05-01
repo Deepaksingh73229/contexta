@@ -1,4 +1,3 @@
-// app/admin/users/page.tsx
 import type { Metadata } from "next"
 import { AppShell } from "@/components/layout/AppShell"
 import { UsersView } from "@/components/admin/UsersView"

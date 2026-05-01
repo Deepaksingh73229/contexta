@@ -1,4 +1,3 @@
-// components/layout/AppSidebar.tsx
 "use client"
 
 import Link from "next/link"
@@ -42,7 +41,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     const activeTasks = useAppSelector(selectActiveTasks)
 
     const navItems: NavItem[] = [
-        { href: "/dashboard", label: "Ask Anything", icon: MessageSquare },
+        { href: "/dashboard", label: "Ask Contexta", icon: MessageSquare },
         canUpload && { href: "/upload", label: "Upload", icon: Upload, badge: activeTasks.length || undefined },
         canViewDocs && { href: "/documents", label: "Documents", icon: FileText },
     ].filter(Boolean) as NavItem[]
@@ -59,34 +58,45 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         <TooltipProvider delayDuration={0}>
             <aside
                 className={cn(
-                    "flex h-full flex-col border-r border-border bg-card transition-all duration-200",
-                    collapsed ? "w-14" : "w-56",
+                    "flex h-full flex-col bg-transparent transition-all duration-300 ease-out z-10",
+                    collapsed ? "w-[72px]" : "w-64", // Slightly wider for a premium feel
                 )}
             >
-                {/* Logo */}
+                {/* ── Logo Area ───────────────────────────────────────────── */}
                 <div className={cn(
-                    "flex h-14 items-center border-b border-border px-3",
-                    collapsed ? "justify-center" : "justify-between px-4",
+                    "flex h-16 items-center px-4 mb-2 mt-1",
+                    collapsed ? "justify-center px-0" : "justify-between"
                 )}>
                     {!collapsed && (
-                        <Link href="/dashboard" className="flex items-center gap-2">
-                            <Database className="h-5 w-5 text-[hsl(var(--brand))]" />
-                            <span className="font-semibold tracking-tight">Contexta</span>
+                        <Link href="/dashboard" className="flex items-center gap-2.5 group">
+                            <div className="flex items-center justify-center size-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-md shadow-violet-500/20 group-hover:shadow-violet-500/40 transition-all duration-300">
+                                <Database className="size-4.5 text-white" />
+                            </div>
+                            <span className="font-bold text-lg tracking-tight text-neutral-900 dark:text-white">
+                                Contexta
+                            </span>
                         </Link>
                     )}
                     {collapsed && (
-                        <Database className="h-5 w-5 text-[hsl(var(--brand))]" />
+                        <Link href="/dashboard" className="flex items-center justify-center size-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-md shadow-violet-500/20 hover:shadow-violet-500/40 transition-all duration-300">
+                            <Database className="size-5 text-white" />
+                        </Link>
                     )}
                     {!collapsed && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggle}>
-                            <ChevronLeft className="h-4 w-4" />
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 rounded-lg transition-colors"
+                            onClick={onToggle}
+                        >
+                            <ChevronLeft className="size-4.5" />
                         </Button>
                     )}
                 </div>
 
-                {/* Nav */}
-                <ScrollArea className="flex-1 py-3">
-                    <nav className="space-y-0.5 px-2">
+                {/* ── Navigation ──────────────────────────────────────────── */}
+                <ScrollArea className="flex-1 px-3">
+                    <nav className="space-y-1 pb-4">
                         {navItems.map((item) => (
                             <NavLink
                                 key={item.href}
@@ -97,97 +107,101 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
                         ))}
 
                         {adminItems.length > 0 && (
-                            <>
-                                <div className="py-2">
-                                    {!collapsed && (
-                                        <p className="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                                            Admin
-                                        </p>
-                                    )}
-                                    {collapsed && <Separator className="my-1" />}
+                            <div className="mt-6 mb-2">
+                                {!collapsed ? (
+                                    <p className="px-3 text-[11px] font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-500 mb-2">
+                                        Administration
+                                    </p>
+                                ) : (
+                                    <div className="flex justify-center mb-2">
+                                        <div className="h-px w-6 bg-neutral-200 dark:bg-neutral-800" />
+                                    </div>
+                                )}
+                                <div className="space-y-1">
+                                    {adminItems.map((item) => (
+                                        <NavLink
+                                            key={item.href}
+                                            item={item}
+                                            collapsed={collapsed}
+                                            active={isActive(item.href)}
+                                        />
+                                    ))}
                                 </div>
-                                {adminItems.map((item) => (
-                                    <NavLink
-                                        key={item.href}
-                                        item={item}
-                                        collapsed={collapsed}
-                                        active={isActive(item.href)}
-                                    />
-                                ))}
-                            </>
+                            </div>
                         )}
                     </nav>
                 </ScrollArea>
 
-                {/* Footer */}
-                <div className="border-t border-border p-2 space-y-1">
-                    {/* Theme toggle */}
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size={collapsed ? "icon" : "sm"}
-                                className={cn("w-full", !collapsed && "justify-start gap-2")}
-                                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                            >
-                                <Sun className="h-4 w-4 dark:hidden" />
-                                <Moon className="hidden h-4 w-4 dark:block" />
-                                {!collapsed && <span>Toggle theme</span>}
-                            </Button>
-                        </TooltipTrigger>
-                        {collapsed && <TooltipContent side="right">Toggle theme</TooltipContent>}
-                    </Tooltip>
+                {/* ── Footer ──────────────────────────────────────────────── */}
+                <div className="p-3 mt-auto space-y-2">
 
-                    {/* Collapse toggle (when collapsed) */}
-                    {collapsed && (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="w-full" onClick={onToggle}>
-                                    <ChevronLeft className="h-4 w-4 rotate-180" />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="right">Expand sidebar</TooltipContent>
-                        </Tooltip>
-                    )}
-
-                    {/* User + logout */}
+                    {/* User Profile */}
                     {!collapsed && user && (
-                        <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
-                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--brand-muted))] text-[10px] font-bold text-[hsl(var(--brand))]">
+                        <div className="flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors hover:bg-neutral-200/50 dark:hover:bg-neutral-800/40 group cursor-pointer">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-neutral-800 to-black dark:from-neutral-200 dark:to-white text-[13px] font-bold text-white dark:text-black shadow-sm">
                                 {user.username[0].toUpperCase()}
                             </div>
                             <div className="min-w-0 flex-1">
-                                <p className="truncate text-xs font-medium">{user.username}</p>
-                                <p className="truncate text-[10px] text-muted-foreground capitalize">{user.role}</p>
+                                <p className="truncate text-[13px] font-semibold text-neutral-900 dark:text-white leading-none mb-1">{user.username}</p>
+                                <p className="truncate text-[11px] font-medium text-neutral-500 dark:text-neutral-400 capitalize leading-none">{user.role}</p>
                             </div>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 shrink-0"
-                                onClick={logout}
-                                aria-label="Log out"
-                            >
-                                <LogOut className="h-3.5 w-3.5" />
-                            </Button>
                         </div>
                     )}
 
-                    {collapsed && (
+                    {/* Action Row */}
+                    <div className={cn(
+                        "flex items-center",
+                        collapsed ? "flex-col gap-2" : "gap-1 px-1"
+                    )}>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="w-full"
+                                    className="size-9 rounded-xl text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
+                                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                                >
+                                    <Sun className="size-4.5 dark:hidden" />
+                                    <Moon className="hidden size-4.5 dark:block" />
+                                    <span className="sr-only">Toggle theme</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">Toggle theme</TooltipContent>
+                        </Tooltip>
+
+                        {!collapsed && <div className="flex-1" />}
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-9 rounded-xl text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                                     onClick={logout}
                                     aria-label="Log out"
                                 >
-                                    <LogOut className="h-4 w-4" />
+                                    <LogOut className="size-4.5" />
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent side="right">Log out</TooltipContent>
                         </Tooltip>
-                    )}
+
+                        {collapsed && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-9 rounded-xl mt-2 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
+                                        onClick={onToggle}
+                                    >
+                                        <ChevronLeft className="size-4.5 rotate-180" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="right">Expand sidebar</TooltipContent>
+                            </Tooltip>
+                        )}
+                    </div>
                 </div>
             </aside>
         </TooltipProvider>
@@ -204,25 +218,48 @@ interface NavLinkProps {
 
 function NavLink({ item, collapsed, active }: NavLinkProps) {
     const Icon = item.icon
+
     const content = (
         <Link
             href={item.href}
             className={cn(
-                "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors",
-                "hover:bg-accent hover:text-accent-foreground",
+                "group flex items-center rounded-xl transition-all duration-200 ease-out relative",
+                collapsed ? "justify-center size-12 mx-auto" : "gap-3 px-3 py-2.5",
                 active
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground",
-                collapsed && "justify-center px-2",
+                    ? "bg-white dark:bg-[#1A1A1A] text-violet-600 dark:text-violet-400 shadow-sm ring-1 ring-inset ring-neutral-200/60 dark:ring-white/10"
+                    : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200/50 dark:hover:bg-neutral-800/40 hover:text-neutral-900 dark:hover:text-neutral-100"
             )}
         >
-            <Icon className="h-4 w-4 shrink-0" />
-            {!collapsed && <span className="truncate">{item.label}</span>}
+            <Icon className={cn(
+                "shrink-0 transition-colors duration-200",
+                collapsed ? "size-5" : "size-4.5",
+                active && "text-violet-600 dark:text-violet-400"
+            )} />
+
+            {!collapsed && (
+                <span className={cn(
+                    "truncate text-[14px]",
+                    active ? "font-semibold" : "font-medium"
+                )}>
+                    {item.label}
+                </span>
+            )}
+
             {!collapsed && item.badge ? (
-                <Badge variant="secondary" className="ml-auto h-4 min-w-4 px-1 text-[10px]">
+                <div className={cn(
+                    "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold transition-colors",
+                    active
+                        ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
+                        : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                )}>
                     {item.badge}
-                </Badge>
+                </div>
             ) : null}
+
+            {/* Active Indicator line for collapsed state */}
+            {collapsed && active && (
+                <div className="absolute left-0 top-1/2 h-1/2 w-1 -translate-y-1/2 rounded-r-full bg-violet-600 dark:bg-violet-400" />
+            )}
         </Link>
     )
 
@@ -231,9 +268,13 @@ function NavLink({ item, collapsed, active }: NavLinkProps) {
             <TooltipProvider delayDuration={0}>
                 <Tooltip>
                     <TooltipTrigger asChild>{content}</TooltipTrigger>
-                    <TooltipContent side="right" className="flex items-center gap-2">
+                    <TooltipContent side="right" className="flex items-center gap-2 font-medium">
                         {item.label}
-                        {item.badge ? <Badge variant="secondary">{item.badge}</Badge> : null}
+                        {item.badge ? (
+                            <span className="flex h-4 items-center justify-center rounded-full bg-violet-500/20 px-1.5 text-[10px] text-violet-300">
+                                {item.badge}
+                            </span>
+                        ) : null}
                     </TooltipContent>
                 </Tooltip>
             </TooltipProvider>

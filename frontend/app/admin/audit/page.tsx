@@ -1,4 +1,3 @@
-// app/admin/audit/page.tsx
 import type { Metadata } from "next"
 import { AppShell } from "@/components/layout/AppShell"
 import { AuditView } from "@/components/admin/AuditView"

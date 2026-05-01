@@ -13,10 +13,11 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50 font-sans antialiased">
+      <Navbar />
       <Hero />
       <Features />
       <HowItWorks />
-      <Footer/>
+      <Footer />
     </div>
   );
 }

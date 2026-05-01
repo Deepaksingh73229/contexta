@@ -1,4 +1,3 @@
-// components/shared/PageHeader.tsx
 import { cn } from "@/utils/cn"
 
 interface PageHeaderProps {
@@ -10,14 +9,25 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, action, className }: PageHeaderProps) {
     return (
-        <div className={cn("flex items-start justify-between", className)}>
-            <div>
-                <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <div className={cn(
+            "flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500 ease-out",
+            className
+        )}>
+            <div className="space-y-1.5 flex-1 min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white truncate">
+                    {title}
+                </h1>
                 {description && (
-                    <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+                    <p className="text-[14px] leading-relaxed text-neutral-500 dark:text-neutral-400 max-w-2xl">
+                        {description}
+                    </p>
                 )}
             </div>
-            {action && <div className="ml-4 shrink-0">{action}</div>}
+            {action && (
+                <div className="shrink-0 flex items-center">
+                    {action}
+                </div>
+            )}
         </div>
     )
 }

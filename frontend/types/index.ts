@@ -4,6 +4,19 @@
 // Mirrors the Pydantic schemas in server/models/schemas.py exactly.
 // ============================================================
 
+export interface NavItem {
+    href: string
+    label: string
+    icon: React.ElementType
+    permission?: string
+    badge?: number
+}
+
+export interface SidebarProps {
+    collapsed: boolean
+    onToggle: () => void
+}
+
 // ── Auth ─────────────────────────────────────────────────────
 
 export interface LoginRequest {

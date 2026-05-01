@@ -1,4 +1,3 @@
-// app/documents/page.tsx
 import type { Metadata } from "next"
 import { AppShell } from "@/components/layout/AppShell"
 import { DocumentsView } from "@/components/query/DocumentsView"
