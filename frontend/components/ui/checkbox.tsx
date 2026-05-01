@@ -14,16 +14,26 @@ function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "peer size-4 shrink-0 rounded-[4px] border border-input shadow-xs transition-shadow outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:bg-input/30 dark:aria-invalid:ring-destructive/40 dark:data-[state=checked]:bg-primary",
+        "peer size-5 shrink-0 rounded-md transition-all duration-200 ease-out active:scale-95 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
+
+        // Unchecked / Base State
+        "bg-white dark:bg-neutral-900 ring-1 ring-inset ring-neutral-200/80 dark:ring-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 hover:ring-neutral-300 dark:hover:ring-white/20",
+
+        // Checked State
+        "data-[state=checked]:bg-violet-600 data-[state=checked]:ring-violet-600 data-[state=checked]:text-white data-[state=checked]:shadow-sm data-[state=checked]:shadow-violet-500/20 dark:data-[state=checked]:bg-violet-600 dark:data-[state=checked]:ring-violet-600",
+
+        // Error State
+        "aria-invalid:ring-rose-500/50 dark:aria-invalid:ring-rose-500/50 aria-invalid:bg-rose-50 dark:aria-invalid:bg-rose-500/10",
+
         className
       )}
       {...props}
     >
       <CheckboxPrimitive.Indicator
         data-slot="checkbox-indicator"
-        className="grid place-content-center text-current transition-none"
+        className="flex items-center justify-center text-current animate-in zoom-in duration-200"
       >
-        <CheckIcon className="size-3.5" />
+        <CheckIcon className="size-3.5" strokeWidth={3} />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )

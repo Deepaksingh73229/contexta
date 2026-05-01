@@ -1,8 +1,7 @@
-// components/tasks/TaskCard.tsx
 "use client"
 
 import { useEffect } from "react"
-import { FileText, X, Trash2, AlertCircle, CheckCircle2, Clock } from "lucide-react"
+import { FileText, X, Trash2, AlertCircle, CheckCircle2, Clock, Activity, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
@@ -23,11 +22,21 @@ interface TaskCardProps {
 
 const STATUS_ICON: Record<TaskStatus, React.ElementType | null> = {
     queued: Clock,
-    running: null,
+    running: Activity,
     done: CheckCircle2,
     failed: AlertCircle,
     cancelled: X,
     interrupted: AlertCircle,
+}
+
+// SaaS-Modern card border and glow states
+const CARD_STATE_STYLES: Record<string, string> = {
+    queued: "ring-neutral-200/80 dark:ring-white/10",
+    running: "ring-violet-300/60 dark:ring-violet-500/30 shadow-md shadow-violet-500/10 bg-white dark:bg-neutral-900/80",
+    done: "ring-emerald-200/80 dark:ring-emerald-500/30 bg-emerald-50/30 dark:bg-emerald-950/10",
+    failed: "ring-rose-200/80 dark:ring-rose-500/30 bg-rose-50/30 dark:bg-rose-950/10",
+    cancelled: "ring-neutral-200/80 dark:ring-white/10 opacity-70 grayscale-[0.5]",
+    interrupted: "ring-amber-200/80 dark:ring-amber-500/30",
 }
 
 export function TaskCard({ taskId }: TaskCardProps) {
@@ -45,47 +54,54 @@ export function TaskCard({ taskId }: TaskCardProps) {
 
     return (
         <div className={cn(
-            "rounded-xl border border-border bg-card p-4 space-y-3 transition-all",
-            task.status === "done" && "border-emerald-200 dark:border-emerald-800",
-            task.status === "failed" && "border-destructive/40",
+            "relative overflow-hidden rounded-2xl p-5 space-y-4 transition-all duration-500 ease-out",
+            "bg-white/80 dark:bg-[#0A0A0A]/60 backdrop-blur-xl ring-1 ring-inset",
+            CARD_STATE_STYLES[task.status] || CARD_STATE_STYLES.queued
         )}>
-            {/* Header */}
-            <div className="flex items-start gap-3">
+            {/* Background glow for running tasks */}
+            {task.status === "running" && (
+                <div className="absolute -top-10 -right-10 size-32 rounded-full bg-violet-500/10 blur-3xl pointer-events-none animate-pulse" />
+            )}
+
+            {/* ── Header Area ────────────────────────────────────────────────── */}
+            <div className="flex items-start gap-4 relative z-10">
+                {/* File Icon */}
                 <div className={cn(
-                    "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                    task.status === "done" ? "bg-emerald-100 dark:bg-emerald-900/30" :
-                        task.status === "failed" ? "bg-destructive/10" : "bg-muted",
+                    "mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl shadow-inner transition-colors duration-500",
+                    task.status === "done" ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" :
+                        task.status === "failed" ? "bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400" :
+                            task.status === "running" ? "bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400" :
+                                "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
                 )}>
-                    <FileText className={cn(
-                        "h-4 w-4",
-                        task.status === "done" ? "text-emerald-600 dark:text-emerald-400" :
-                            task.status === "failed" ? "text-destructive" : "text-muted-foreground",
-                    )} />
+                    <FileText className="size-5" />
                 </div>
 
+                {/* Metadata */}
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{task.filename}</p>
-                    <div className="mt-0.5 flex items-center gap-2">
+                    <p className="truncate text-[14px] font-semibold text-neutral-900 dark:text-white mb-1.5">
+                        {task.filename}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
                         <Badge
                             variant="outline"
-                            className={cn("h-5 gap-1 text-[11px] px-1.5", STATUS_COLORS[task.status])}
-                        >
-                            {Icon && <Icon className="h-3 w-3" />}
-                            {/* Running pulse dot */}
-                            {task.status === "running" && (
-                                <span className="pulse-dot" />
+                            className={cn(
+                                "h-5 gap-1.5 text-[10px] px-2 font-bold uppercase tracking-wider border-0 shadow-sm",
+                                STATUS_COLORS[task.status]
                             )}
+                        >
+                            {Icon && <Icon className={cn("size-3", task.status === "running" && "animate-spin-slow")} />}
                             {STATUS_LABELS[task.status]}
                         </Badge>
 
                         {task.status === "running" && task.total_nodes > 0 && (
-                            <span className="text-[11px] text-muted-foreground">
-                                {task.nodes_done}/{task.total_nodes} sections
+                            <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                                {task.nodes_done} / {task.total_nodes} nodes
                             </span>
                         )}
 
                         {terminal && task.elapsed_seconds > 0 && (
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="flex items-center gap-1 text-[11px] font-mono text-neutral-400 dark:text-neutral-500">
+                                <Clock className="size-3" />
                                 {formatDuration(task.elapsed_seconds)}
                             </span>
                         )}
@@ -93,55 +109,65 @@ export function TaskCard({ taskId }: TaskCardProps) {
                 </div>
 
                 {/* Actions */}
-                <div className="flex shrink-0 gap-1">
+                <div className="flex shrink-0 gap-1 ml-2">
                     {!terminal && canCancelTasks && (
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground"
+                            className="size-8 rounded-lg text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
                             onClick={() => dispatch(cancelTask(taskId))}
                             aria-label="Cancel task"
                         >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="size-4" />
                         </Button>
                     )}
                     {terminal && canCancelTasks && (
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground"
+                            className="size-8 rounded-lg text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                             onClick={() => dispatch(deleteTask(taskId))}
-                            aria-label="Delete task"
+                            aria-label="Delete task log"
                         >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="size-4" />
                         </Button>
                     )}
                 </div>
             </div>
 
-            {/* Progress bar (running only) */}
+            {/* ── Progress Section (Running only) ────────────────────────────── */}
             {task.status === "running" && (
-                <div className="space-y-1.5">
-                    <Progress value={task.pct} className="h-1.5" />
+                <div className="space-y-2.5 pt-1 relative z-10">
                     <div className="flex items-center justify-between">
-                        <p className="text-[11px] text-muted-foreground truncate max-w-[70%]">
+                        <p className="text-[11px] font-medium text-neutral-600 dark:text-neutral-300 truncate max-w-[70%]">
                             {task.stage_label}
                             {task.current_node && (
-                                <span className="ml-1 text-muted-foreground/60">— {task.current_node}</span>
+                                <span className="ml-1 text-neutral-400 dark:text-neutral-500">— {task.current_node}</span>
                             )}
                         </p>
-                        <p className="text-[11px] text-muted-foreground shrink-0 ml-2">
-                            {task.pct.toFixed(0)}% · {formatEta(task.eta_seconds)}
+                        <p className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 shrink-0 ml-2">
+                            <span className="font-bold text-violet-600 dark:text-violet-400 mr-1.5">{task.pct.toFixed(0)}%</span>
+                            {formatEta(task.eta_seconds)}
                         </p>
+                    </div>
+                    {/* Progress Bar Container */}
+                    <div className="h-1.5 w-full bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-violet-500 to-purple-600 dark:from-violet-400 dark:to-purple-500 transition-all duration-300 ease-out"
+                            style={{ width: `${task.pct}%` }}
+                        />
                     </div>
                 </div>
             )}
 
-            {/* Error */}
+            {/* ── Error State ────────────────────────────────────────────────── */}
             {task.status === "failed" && task.error && (
-                <p className="text-xs text-destructive bg-destructive/5 rounded-md px-2 py-1.5">
-                    {task.error}
-                </p>
+                <div className="flex items-start gap-2.5 mt-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 px-3.5 py-3 relative z-10">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                    <p className="text-[12px] font-medium text-rose-900 dark:text-rose-200 leading-relaxed">
+                        {task.error}
+                    </p>
+                </div>
             )}
         </div>
     )

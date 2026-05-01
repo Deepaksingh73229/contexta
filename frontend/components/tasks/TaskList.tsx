@@ -1,4 +1,3 @@
-// components/tasks/TaskList.tsx
 "use client"
 
 import { useEffect } from "react"
@@ -6,7 +5,8 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { fetchTasks, selectAllTasks, selectTasksListStatus } from "@/store/slices/tasksSlice"
 import { TaskCard } from "./TaskCard"
 import { Skeleton } from "@/components/ui/skeleton"
-import { InboxIcon } from "lucide-react"
+import { Activity } from "lucide-react"
+import { EmptyState } from "@/components/shared/EmptyState"
 
 export function TaskList() {
     const dispatch = useAppDispatch()
@@ -19,25 +19,35 @@ export function TaskList() {
 
     if (status === "loading" && tasks.length === 0) {
         return (
-            <div className="space-y-3">
-                {[1, 2].map((i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
+            <div className="space-y-4 animate-in fade-in duration-300">
+                {[1, 2, 3].map((i) => (
+                    <Skeleton
+                        key={i}
+                        className="h-[104px] w-full rounded-2xl bg-neutral-200/50 dark:bg-neutral-800/50"
+                    />
+                ))}
             </div>
         )
     }
 
     if (tasks.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-12 text-center">
-                <InboxIcon className="h-8 w-8 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium">No ingestion tasks yet</p>
-                <p className="text-xs text-muted-foreground mt-1">Upload a PDF to get started</p>
+            <div className="rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/20 transition-colors">
+                <EmptyState
+                    icon={Activity}
+                    title="No active tasks"
+                    description="Upload a PDF document to start processing and building your vector knowledge base."
+                    className="min-h-[250px] py-10"
+                />
             </div>
         )
     }
 
     return (
-        <div className="space-y-3">
-            {tasks.map((task) => <TaskCard key={task.task_id} taskId={task.task_id} />)}
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+            {tasks.map((task) => (
+                <TaskCard key={task.task_id} taskId={task.task_id} />
+            ))}
         </div>
     )
 }

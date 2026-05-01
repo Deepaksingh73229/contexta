@@ -1,4 +1,3 @@
-// app/upload/page.tsx
 import type { Metadata } from "next"
 import { AppShell } from "@/components/layout/AppShell"
 import { UploadZone } from "@/components/upload/UploadZone"
