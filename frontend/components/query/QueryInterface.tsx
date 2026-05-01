@@ -1,12 +1,10 @@
 "use client"
 
-import { useState } from "react"
 import { useQuery } from "@/lib/hooks"
 import { QueryInput } from "./QueryInput"
 import { QueryResult } from "./QueryResult"
 import { QueryHistory } from "./QueryHistory"
 import { DocumentFilter } from "./DocumentFilter"
-import { EmptyState } from "@/components/shared/EmptyState"
 import { MessageSquare, Sparkles } from "lucide-react"
 
 export function QueryInterface() {
@@ -26,11 +24,11 @@ export function QueryInterface() {
                     {status === "idle" && !currentResult ? (
                         <div className="flex h-full flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 duration-700 ease-out">
                             {/* Decorative background glow for empty state */}
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[500px] bg-violet-400/10 dark:bg-violet-600/10 blur-[100px] rounded-full pointer-events-none" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-125 bg-violet-400/10 dark:bg-violet-600/10 blur-[100px] rounded-full pointer-events-none" />
 
                             <div className="relative z-10 bg-white/60 dark:bg-neutral-900/40 backdrop-blur-xl p-8 rounded-3xl border border-neutral-200/60 dark:border-white/10 shadow-xl shadow-neutral-200/30 dark:shadow-black/20 max-w-md text-center">
                                 <div className="flex justify-center mb-6">
-                                    <div className="relative flex items-center justify-center size-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/20">
+                                    <div className="relative flex items-center justify-center size-14 rounded-2xl bg-linear-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/20">
                                         <Sparkles className="size-6 text-white absolute -top-2 -right-2 animate-pulse" />
                                         <MessageSquare className="size-6 text-white" />
                                     </div>
@@ -50,10 +48,10 @@ export function QueryInterface() {
                     )}
                 </div>
 
-                {/* Bottom Input Area - Floating Gradient Effect */}
+                {/* Bottom Input Area - Floating linear Effect */}
                 <div className="
                     absolute bottom-0 left-0 right-0 
-                    bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/95 to-transparent 
+                    bg-linear-to-t from-[#FAFAFA] via-[#FAFAFA]/95 to-transparent 
                     dark:from-[#0A0A0A] dark:via-[#0A0A0A]/95 
                     pt-20 pb-6 px-4 z-20 pointer-events-none
                 ">
@@ -79,7 +77,7 @@ export function QueryInterface() {
                     animate-in slide-in-from-right-8 duration-300 ease-out z-30 relative
                 ">
                     {/* Inner subtle highlight line for 3D depth */}
-                    <div className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-white/50 dark:via-white/5 to-transparent pointer-events-none" />
+                    <div className="absolute inset-y-0 left-0 w-px bg-linear-to-b from-transparent via-white/50 dark:via-white/5 to-transparent pointer-events-none" />
                     <QueryHistory />
                 </div>
             )}

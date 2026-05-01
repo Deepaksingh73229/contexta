@@ -1,25 +1,33 @@
 // ============================================================
 // config/api.config.ts
 // Central configuration for all API endpoints and constants.
-// Change BASE_URL here to point at any environment.
+// Values are dynamically loaded from environment variables.
 // ============================================================
 
-export const API_CONFIG = {
-    BASE_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000",
+// Helper to parse numbers from env, falling back to a default
+const getEnvNumber = (key: string | undefined, fallback: number): number => {
+    if (!key) return fallback;
+    const parsed = parseInt(key, 10);
+    return isNaN(parsed) ? fallback : parsed;
+};
 
-    // Token storage keys
-    TOKEN_KEY: "contexta_access_token",
-    REFRESH_KEY: "contexta_refresh_token",
-    USER_KEY: "contexta_user",
+export const API_CONFIG = {
+    // Base URL for the backend API
+    BASE_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+
+    // Token storage keys (localStorage/sessionStorage)
+    TOKEN_KEY: process.env.NEXT_PUBLIC_TOKEN_KEY || "contexta_access_token",
+    REFRESH_KEY: process.env.NEXT_PUBLIC_REFRESH_KEY || "contexta_refresh_token",
+    USER_KEY: process.env.NEXT_PUBLIC_USER_KEY || "contexta_user",
 
     // Request timeouts (ms)
-    TIMEOUT_DEFAULT: 30_000,
-    TIMEOUT_UPLOAD: 120_000,
-    TIMEOUT_QUERY: 60_000,
+    TIMEOUT_DEFAULT: getEnvNumber(process.env.NEXT_PUBLIC_TIMEOUT_DEFAULT, 30_000),
+    TIMEOUT_UPLOAD: getEnvNumber(process.env.NEXT_PUBLIC_TIMEOUT_UPLOAD, 120_000),
+    TIMEOUT_QUERY: getEnvNumber(process.env.NEXT_PUBLIC_TIMEOUT_QUERY, 60_000),
 
     // Polling interval for task progress (ms)
-    POLL_INTERVAL: 2_000,
-} as const
+    POLL_INTERVAL: getEnvNumber(process.env.NEXT_PUBLIC_POLL_INTERVAL, 2_000),
+} as const;
 
 // ── All endpoint paths ────────────────────────────────────────
 export const ENDPOINTS = {
@@ -73,7 +81,7 @@ export const ENDPOINTS = {
         AUDIT: "/admin/audit",
         ROLES: "/admin/roles",
     },
-} as const
+} as const;
 
 // ── Terminal task statuses (stop polling) ─────────────────────
-export const TERMINAL_STATUSES = new Set(["done", "failed", "cancelled"])
+export const TERMINAL_STATUSES = new Set(["done", "failed", "cancelled"]);

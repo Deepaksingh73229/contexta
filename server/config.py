@@ -1,123 +1,123 @@
 """
 config.py — Central configuration for the Contexta enterprise backend.
 
-All paths, model names, tunable constants, and feature flags live here.
-No other file should hardcode these values.
+All paths, model names, tunable constants, and feature flags are now dynamically 
+loaded from the .env file to ensure environment portability and security.
 """
 
 from __future__ import annotations
+import os
+import secrets
 from pathlib import Path
+from dotenv import load_dotenv
 
-import os as _os
-import secrets as _secrets
+# Load environment variables from .env file
+load_dotenv()
 
-# ── Directory layout ───────────────────────────────────────────────────────────
+# ── Type Casting Helpers ──────────────────────────────────────────────────────
+def get_bool(key: str, default: bool) -> bool:
+    val = os.getenv(key)
+    if val is None:
+        return default
+    return str(val).lower() in ("true", "1", "t", "yes", "y")
+
+def get_list(key: str, default: list[str]) -> list[str]:
+    val = os.getenv(key)
+    if not val:
+        return default
+    return [item.strip() for item in val.split(",")]
+
+# ── Directory Layout ──────────────────────────────────────────────────────────
 BASE_DIR: Path = Path(__file__).resolve().parent
 
-DOCS_DIR:  Path = BASE_DIR / "documents"
-TREE_DIR:  Path = BASE_DIR / "tree_indexes"
-CACHE_DIR: Path = BASE_DIR / "query_cache"
+DOCS_DIR:  Path = BASE_DIR / os.getenv("DIR_DOCS", "documents")
+TREE_DIR:  Path = BASE_DIR / os.getenv("DIR_TREE", "tree_indexes")
+CACHE_DIR: Path = BASE_DIR / os.getenv("DIR_CACHE", "query_cache")
+AUTH_DIR:  Path = BASE_DIR / os.getenv("DIR_AUTH", "auth_data")
 
-DOCS_DIR.mkdir(parents=True, exist_ok=True)
-TREE_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Auto-create necessary directories
+for directory in (DOCS_DIR, TREE_DIR, CACHE_DIR, AUTH_DIR):
+    directory.mkdir(parents=True, exist_ok=True)
 
-# ── Authentication ─────────────────────────────────────────────────────────────
-# Directory for auth data: users.json, audit.log, revoked_tokens.json.
-AUTH_DIR: Path = BASE_DIR / "auth_data"
-AUTH_DIR.mkdir(parents=True, exist_ok=True)
+# ── Authentication ────────────────────────────────────────────────────────────
+AUTH_ALGORITHM: str = os.getenv("AUTH_ALGORITHM", "HS256")
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+AUTH_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("AUTH_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
-# JWT algorithm.
-AUTH_ALGORITHM: str = "HS256"
-
-# Access token lifetime (minutes).
-AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-
-# Refresh token lifetime (days).
-AUTH_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-
-# Secret key for JWT signing.
-# Auto-generated on first run and written to AUTH_DIR/secret.key.
-# To rotate: delete the file and restart the server (all users must re-login).
 _SECRET_KEY_FILE: Path = AUTH_DIR / "secret.key"
 
 def _load_or_create_secret() -> str:
+    # 1. Prioritize explicitly provided environment variable
+    env_secret = os.getenv("AUTH_SECRET_KEY")
+    if env_secret:
+        return env_secret
+        
+    # 2. Fallback to reading from local file
     if _SECRET_KEY_FILE.exists():
         return _SECRET_KEY_FILE.read_text().strip()
-    key = _secrets.token_hex(32)   # 256-bit secret
+        
+    # 3. Ultimate Fallback: Auto-generate, save, and secure the file
+    key = secrets.token_hex(32)  # 256-bit secret
     _SECRET_KEY_FILE.write_text(key)
-    _SECRET_KEY_FILE.chmod(0o600)  # owner read-only
+    _SECRET_KEY_FILE.chmod(0o600)  # Owner read/write only
     return key
 
 AUTH_SECRET_KEY: str = _load_or_create_secret()
 
-# ── Ollama LLM ─────────────────────────────────────────────────────────────────
-OLLAMA_MODEL: str = "llama3.1:latest"
+# ── Ollama LLM ────────────────────────────────────────────────────────────────
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
 
 OLLAMA_OPTIONS: dict = {
-    "temperature": 0.1,
-    "seed":        42,
-    "num_ctx":     16384,
+    "temperature": float(os.getenv("OLLAMA_OPTIONS_TEMPERATURE", "0.1")),
+    "seed":        int(os.getenv("OLLAMA_OPTIONS_SEED", "42")),
+    "num_ctx":     int(os.getenv("OLLAMA_OPTIONS_NUM_CTX", "16384")),
 }
 
-# ── Embedding model (offline, sentence-transformers) ──────────────────────────
-# Used for FAISS node indexing and query embedding.
-# Pull once:  python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')"
-EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
-EMBEDDING_DIM:   int = 384   # bge-small output dimension
+# ── Embedding Model ───────────────────────────────────────────────────────────
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+EMBEDDING_DIM:   int = int(os.getenv("EMBEDDING_DIM", "384"))
 
-# ── Upload limits ──────────────────────────────────────────────────────────────
-MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024   # 50 MB
+# ── Upload Limits ─────────────────────────────────────────────────────────────
+MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", "52428800"))
 
-# ── Tree / chunking parameters ─────────────────────────────────────────────────
-MAX_SUMMARY_CHARS: int = 5_000
-MAX_CONTEXT_CHARS: int = 8_000
+# ── Tree / Chunking Parameters ────────────────────────────────────────────────
+MAX_SUMMARY_CHARS: int = int(os.getenv("MAX_SUMMARY_CHARS", "5000"))
+MAX_CONTEXT_CHARS: int = int(os.getenv("MAX_CONTEXT_CHARS", "8000"))
 
-# ── Retrieval parameters ───────────────────────────────────────────────────────
-# Beam search top-K per level
-BEAM_TOP_K_L1: int = 3   # chapter level
-BEAM_TOP_K_L2: int = 2   # section level
-BEAM_TOP_K_L3: int = 2   # subsection level
+# ── Retrieval Parameters ──────────────────────────────────────────────────────
+BEAM_TOP_K_L1: int = int(os.getenv("BEAM_TOP_K_L1", "3"))
+BEAM_TOP_K_L2: int = int(os.getenv("BEAM_TOP_K_L2", "2"))
+BEAM_TOP_K_L3: int = int(os.getenv("BEAM_TOP_K_L3", "2"))
 
-# Hybrid scorer weights (must sum to 1.0)
-HYBRID_WEIGHT_SEMANTIC:  float = 0.50
-HYBRID_WEIGHT_BM25:      float = 0.30
-HYBRID_WEIGHT_METADATA:  float = 0.20
+HYBRID_WEIGHT_SEMANTIC: float = float(os.getenv("HYBRID_WEIGHT_SEMANTIC", "0.50"))
+HYBRID_WEIGHT_BM25:     float = float(os.getenv("HYBRID_WEIGHT_BM25", "0.30"))
+HYBRID_WEIGHT_METADATA: float = float(os.getenv("HYBRID_WEIGHT_METADATA", "0.20"))
 
-# Two-stage retrieval
-RETRIEVAL_STAGE1_TOP_N: int = 20   # fast pass candidates
-RETRIEVAL_STAGE2_TOP_K: int = 5    # cross-encoder re-rank output
+RETRIEVAL_STAGE1_TOP_N: int = int(os.getenv("RETRIEVAL_STAGE1_TOP_N", "20"))
+RETRIEVAL_STAGE2_TOP_K: int = int(os.getenv("RETRIEVAL_STAGE2_TOP_K", "5"))
 
-# ── Query rewriting ────────────────────────────────────────────────────────────
-QUERY_REWRITE_ENABLED:    bool = True
-MULTI_QUERY_COUNT:        int  = 3    # number of query variants to generate
-MULTI_QUERY_ENABLED:      bool = True
+# ── Query Rewriting ───────────────────────────────────────────────────────────
+QUERY_REWRITE_ENABLED: bool = get_bool("QUERY_REWRITE_ENABLED", True)
+MULTI_QUERY_COUNT:     int  = int(os.getenv("MULTI_QUERY_COUNT", "3"))
+MULTI_QUERY_ENABLED:   bool = get_bool("MULTI_QUERY_ENABLED", True)
 
-# ── Query path cache ───────────────────────────────────────────────────────────
-CACHE_ENABLED:      bool = True
-CACHE_MAX_ENTRIES:  int  = 1_000
-CACHE_TTL_SECONDS:  int  = 7 * 24 * 3600   # 7 days
+# ── Query Path Cache ──────────────────────────────────────────────────────────
+CACHE_ENABLED:     bool = get_bool("CACHE_ENABLED", True)
+CACHE_MAX_ENTRIES: int  = int(os.getenv("CACHE_MAX_ENTRIES", "1000"))
+CACHE_TTL_SECONDS: int  = int(os.getenv("CACHE_TTL_SECONDS", "604800"))
 
-# ── Context builder ────────────────────────────────────────────────────────────
-CONTEXT_DEDUP_THRESHOLD: float = 0.92   # cosine sim above which a node is a duplicate
-CONTEXT_MERGE_SIBLINGS:  bool  = True
+# ── Context Builder ───────────────────────────────────────────────────────────
+CONTEXT_DEDUP_THRESHOLD: float = float(os.getenv("CONTEXT_DEDUP_THRESHOLD", "0.92"))
+CONTEXT_MERGE_SIBLINGS:  bool  = get_bool("CONTEXT_MERGE_SIBLINGS", True)
 
-# ── Cross-encoder re-ranking ───────────────────────────────────────────────────
-RERANKER_ENABLED: bool  = True
-RERANKER_MODEL:   str   = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# ── Cross-encoder Re-ranking ──────────────────────────────────────────────────
+RERANKER_ENABLED: bool = get_bool("RERANKER_ENABLED", True)
+RERANKER_MODEL:   str  = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 
-# ── Parallel ingestion ────────────────────────────────────────────────────────
-# Max documents ingested simultaneously (each runs in its own worker thread).
-MAX_PARALLEL_INGESTIONS: int = 2
+# ── Parallel Ingestion ────────────────────────────────────────────────────────
+MAX_PARALLEL_INGESTIONS: int = int(os.getenv("MAX_PARALLEL_INGESTIONS", "2"))
+SUMMARISE_WORKERS:       int = int(os.getenv("SUMMARISE_WORKERS", "3"))
+TASK_HISTORY_LIMIT:      int = int(os.getenv("TASK_HISTORY_LIMIT", "100"))
 
-# Parallel LLM summary threads WITHIN one document's summarise stage.
-# Each thread calls Ollama independently. Reduce to 1 on low-RAM machines.
-SUMMARISE_WORKERS: int = 3
-
-# Task store: how many terminal tasks (done/failed/cancelled) to retain.
-TASK_HISTORY_LIMIT: int = 100
-
-# ── CORS ───────────────────────────────────────────────────────────────────────
-CORS_ORIGINS: list[str] = [
-    "http://localhost:3000",
-]
+# ── CORS ──────────────────────────────────────────────────────────────────────
+CORS_ORIGINS: list[str] = get_list("CORS_ORIGINS", ["http://localhost:3000"])

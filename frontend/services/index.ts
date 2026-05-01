@@ -6,9 +6,9 @@
 //   import { authService, queryService } from "@/services"
 // ============================================================
 
-export { authService } from "./auth.service"
-export { ingestService } from "./ingest.service"
-export { tasksService } from "./tasks.service"
-export { queryService } from "./query.service"
-export { citationsService } from "./citations.service"
-export { adminService } from "./admin.service"
+export { authService } from "./operations/auth.service"
+export { ingestService } from "./operations/ingest.service"
+export { tasksService } from "./operations/tasks.service"
+export { queryService } from "./operations/query.service"
+export { citationsService } from "./operations/citations.service"
+export { adminService } from "./operations/admin.service"
