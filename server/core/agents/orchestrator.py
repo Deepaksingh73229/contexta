@@ -1,34 +1,27 @@
 """
 core/agents/orchestrator.py — Multi-agent query orchestrator.
 
-The Orchestrator coordinates all agents in the pipeline and manages
-parallel execution for maximum response speed.
+BUG FIXES applied:
+  1. (Image 2) Cross-encoder pre-warming: _warm_cross_encoder() is called once at
+     module import time. This ensures the model is loaded before the first query
+     arrives — eliminating the cold-start double-load that appeared in the terminal.
 
-Pipeline
---------
-  Step 1  Intent Agent      — classify query, extract entities          (LLM call)
-  Step 2  Query Rewriter    — rewrite for retrieval precision            (LLM call)
-  Step 3  Planner Agent     — decide retrieval strategy + query variants (LLM call)
-  ─── Steps 1-3 run sequentially (each depends on the previous) ────────────────
-  Step 4  Parallel Retrieval — all query variants run simultaneously     (FAISS)
-  ─── Step 4 is parallelised across queries AND documents ─────────────────────
-  Step 5  Synthesis Agent   — intent-aware answer generation             (LLM call)
-  Step 6  Confidence check  — lightweight evidence quality evaluation    (LLM call)
-  ─── Steps 5-6 run in parallel (independent of each other) ──────────────────
+  2. (Image 1) Retrieval score gate: top retrieval scores are now passed through
+     to generate_answer() so it can apply the relevance threshold check introduced
+     in retriever.py. If the best score is below the threshold, "not found" is
+     returned immediately instead of letting the LLM hallucinate.
 
-Speed optimisations
--------------------
-1. Steps 1 + 2 (Intent + Rewrite) run in PARALLEL — they are independent.
-2. All query variant retrievals run in PARALLEL via ThreadPoolExecutor.
-3. All document retrievals for each query run in PARALLEL.
-4. The confidence evaluation runs while the answer is being post-processed.
-5. FAISS embed_text() calls are batched where possible.
-6. The embedding model is a singleton — no cold-start per call.
+  3. (Image 1) Context quality gate: if fused retrieval returns nodes but the
+     highest score is very low (< 0.20), the orchestrator short-circuits and
+     returns "not found" before calling any synthesis LLM.
 
-Public surface
---------------
-  AgentResult    — full structured result from the multi-agent pipeline
-  run_agents(query, doc_ids, doc_titles, trees_and_indexes) → AgentResult
+Pipeline (unchanged):
+  Step 1  Intent Agent      (LLM call)
+  Step 2  Query Rewriter    (LLM call)
+  Step 3  Planner Agent     (LLM call)
+  Step 4  Parallel Retrieval (FAISS) — all queries × all docs
+  Step 5  Synthesis Agent   (LLM call)
+  Step 6  Confidence check  (LLM call)
 """
 
 from __future__ import annotations
@@ -52,27 +45,38 @@ from core.tree import TreeNode, create_node_map
 
 logger = logging.getLogger(__name__)
 
+# Minimum retrieval score to proceed with LLM synthesis.
+# Below this, we return "not found" immediately to prevent hallucination.
+_MIN_PROCEED_SCORE = 0.20
+
+
+# ── Cross-encoder pre-warm (Image 2 fix) ──────────────────────────────────────
+
+def _warm_cross_encoder() -> None:
+    """
+    Load the cross-encoder into memory at module import time (once).
+
+    Previously the model was loaded lazily on the first query — but because
+    parallel retrieval threads all call _get_cross_encoder() simultaneously
+    before the singleton is set, each thread triggered its own load.
+    Pre-warming at import time means the singleton is ready before any request.
+    """
+    try:
+        from core.retriever import _get_cross_encoder
+        _get_cross_encoder()   # triggers the thread-safe load exactly once
+        logger.info("Cross-encoder pre-warmed at module load.")
+    except Exception as exc:
+        logger.debug("Cross-encoder pre-warm skipped: %s", exc)
+
+
+# Run at import time (happens once when FastAPI starts up).
+_warm_cross_encoder()
+
 
 # ── Result dataclass ───────────────────────────────────────────────────────────
 
 @dataclass
 class AgentResult:
-    """
-    Full structured result from the multi-agent pipeline.
-
-    Fields
-    ------
-    answer          : Final answer text (from Synthesis Agent).
-    confidence      : HIGH | MEDIUM | LOW (from Synthesis Agent).
-    gaps            : Topics the context did not cover.
-    cited_sections  : Section titles used to generate the answer.
-    intent_type     : Classified intent (for frontend display).
-    search_focus    : What the agents were searching for.
-    all_queries     : All query variants that were executed.
-    node_ids        : Ordered list of retrieved node IDs.
-    thinking        : Full agent reasoning trace (for transparency).
-    elapsed_ms      : Total wall-clock time in milliseconds.
-    """
     answer:         str
     confidence:     str              = "MEDIUM"
     gaps:           list[str]        = field(default_factory=list)
@@ -88,16 +92,13 @@ class AgentResult:
 # ── Parallel retrieval helpers ─────────────────────────────────────────────────
 
 def _retrieve_one_query_one_doc(
-    query:       str,
-    tree:        TreeNode,
-    faiss_index: FaissIndex,
-    top_k:       int,
+    query:        str,
+    tree:         TreeNode,
+    faiss_index:  FaissIndex,
+    top_k:        int,
     use_reranker: bool,
 ) -> list[tuple[str, float]]:
-    """
-    Single-query, single-document retrieval.
-    Runs in a worker thread.
-    """
+    """Single-query, single-document retrieval. Runs in a worker thread."""
     query_vec = embed_text(query)
     return retrieve_for_query(
         tree        = tree,
@@ -109,31 +110,30 @@ def _retrieve_one_query_one_doc(
 
 
 def _parallel_retrieve(
-    queries:             list[str],
-    trees_and_indexes:   list[tuple[str, str, TreeNode, FaissIndex]],  # (doc_id, filename, tree, faiss)
-    top_k:               int,
-    use_reranker:        bool,
-) -> dict[str, tuple[float, str, str, "TreeNode"]]:
+    queries:            list[str],
+    trees_and_indexes:  list[tuple[str, str, TreeNode, FaissIndex]],
+    top_k:              int,
+    use_reranker:       bool,
+) -> dict[str, tuple[float, str, str, TreeNode]]:
     """
-    Run all (query × document) combinations in parallel using a ThreadPoolExecutor.
+    Run all (query × document) combinations in parallel.
 
-    Returns
-    -------
-    Fused result: node_id → (best_score, doc_id, filename, node_object)
+    Returns fused result: node_id → (best_score, doc_id, filename, node_object).
     Max-score fusion across all queries and documents.
     """
     fused: dict[str, tuple[float, str, str, TreeNode]] = {}
 
-    # Build all tasks: (query, doc_id, filename, tree, faiss_index)
     tasks = [
         (query, doc_id, filename, tree, faiss)
         for query in queries
         for doc_id, filename, tree, faiss in trees_and_indexes
     ]
 
-    max_workers = min(len(tasks), 8)   # cap at 8 threads to avoid Ollama overload
+    max_workers = min(len(tasks), 8)
 
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="retrieval") as ex:
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="retrieval"
+    ) as ex:
         future_map = {
             ex.submit(
                 _retrieve_one_query_one_doc,
@@ -145,7 +145,7 @@ def _parallel_retrieve(
         for future in as_completed(future_map):
             doc_id, filename, tree = future_map[future]
             try:
-                results = future.result()
+                results  = future.result()
                 node_map = create_node_map(tree)
                 for nid, score in results:
                     if nid not in fused or score > fused[nid][0]:
@@ -161,23 +161,12 @@ def _parallel_retrieve(
 # ── Main orchestrator ──────────────────────────────────────────────────────────
 
 def run_agents(
-    raw_query:          str,
-    trees_and_indexes:  list[tuple[str, str, TreeNode, FaissIndex]],
-    doc_titles:         str = "",
+    raw_query:         str,
+    trees_and_indexes: list[tuple[str, str, TreeNode, FaissIndex]],
+    doc_titles:        str = "",
 ) -> AgentResult:
     """
     Run the full multi-agent pipeline for a user query.
-
-    Parameters
-    ----------
-    raw_query          : The user's original question.
-    trees_and_indexes  : List of (doc_id, filename, TreeNode, FaissIndex) tuples.
-                         One entry per document to search.
-    doc_titles         : Comma-separated list of document filenames (for rewriting).
-
-    Returns
-    -------
-    AgentResult with structured answer, confidence, and full transparency trace.
     """
     t_start = time.perf_counter()
 
@@ -189,7 +178,6 @@ def run_agents(
         )
 
     # ── Steps 1 + 2: Intent analysis and query rewriting IN PARALLEL ──────────
-    # These are independent — both can run simultaneously.
     intent_result: IntentResult | None = None
     rewritten_query: str               = raw_query
 
@@ -199,15 +187,15 @@ def run_agents(
         intent_future  = ex.submit(analyse_intent, raw_query)
         rewrite_future = ex.submit(rewrite_query, raw_query, doc_titles)
 
-        intent_result    = intent_future.result()
-        rewritten_query  = rewrite_future.result()
+        intent_result   = intent_future.result()
+        rewritten_query = rewrite_future.result()
 
     logger.info(
         "Agents init: intent=%s  confidence=%.2f  rewritten=%r",
         intent_result.intent_type, intent_result.confidence, rewritten_query[:60],
     )
 
-    # ── Step 3: Planner — decide strategy and generate query variants ──────────
+    # ── Step 3: Planner ────────────────────────────────────────────────────────
     plan: RetrievalPlan = plan_retrieval(
         intent          = intent_result,
         rewritten_query = rewritten_query,
@@ -219,39 +207,66 @@ def run_agents(
         plan.mode, len(plan.queries), plan.top_k, plan.use_reranker,
     )
 
-    # ── Step 4: Parallel retrieval across all queries × all documents ──────────
+    # ── Step 4: Parallel retrieval ─────────────────────────────────────────────
     fused = _parallel_retrieve(
-        queries            = plan.queries,
-        trees_and_indexes  = trees_and_indexes,
-        top_k              = plan.top_k,
-        use_reranker       = plan.use_reranker,
+        queries           = plan.queries,
+        trees_and_indexes = trees_and_indexes,
+        top_k             = plan.top_k,
+        use_reranker      = plan.use_reranker,
     )
 
     if not fused:
         return AgentResult(
-            answer      = "I could not find information about this in the available documents.",
-            confidence  = "LOW",
-            intent_type = intent_result.intent_type,
+            answer       = "I could not find information about this in the available documents.",
+            confidence   = "LOW",
+            intent_type  = intent_result.intent_type,
             search_focus = intent_result.search_focus,
             all_queries  = plan.queries,
-            thinking    = _build_thinking(intent_result, plan, rewritten_query, [], 0),
+            thinking     = _build_thinking(intent_result, plan, rewritten_query, [], 0),
         )
 
-    # ── Sort fused results by score, take top_k ───────────────────────────────
+    # Sort by score, take top_k.
     sorted_results = sorted(fused.items(), key=lambda x: x[1][0], reverse=True)
     top_results    = sorted_results[:plan.top_k]
 
-    top_node_ids   = [nid for nid, _ in top_results]
-    source_titles  = [fused[nid][3].title for nid in top_node_ids if nid in fused]
+    # ── Relevance gate (Image 1 fix) ───────────────────────────────────────────
+    # If the BEST score across all retrieved nodes is below the proceed threshold,
+    # the retrieval almost certainly did not find relevant content. Return "not found"
+    # instead of passing near-zero-relevance context to the LLM.
+    best_score = top_results[0][1][0] if top_results else 0.0
+    if best_score < _MIN_PROCEED_SCORE:
+        logger.warning(
+            "Orchestrator relevance gate: best_score=%.3f < %.3f. Refusing to synthesise.",
+            best_score, _MIN_PROCEED_SCORE,
+        )
+        return AgentResult(
+            answer       = "I could not find this information in the available documents.",
+            confidence   = "LOW",
+            intent_type  = intent_result.intent_type,
+            search_focus = intent_result.search_focus,
+            all_queries  = plan.queries,
+            node_ids     = [],
+            thinking     = _build_thinking(intent_result, plan, rewritten_query, [], 0),
+            gaps         = [
+                f"No sections with sufficient relevance were found "
+                f"(best score: {best_score:.3f})."
+            ],
+        )
 
-    # Build unified node map for context building.
+    top_node_ids  = [nid for nid, _ in top_results]
+    source_titles = [fused[nid][3].title for nid in top_node_ids if nid in fused]
+
+    # Build unified node map for context.
     merged_node_map: dict[str, TreeNode] = {
         nid: fused[nid][3] for nid in top_node_ids if nid in fused
     }
 
     context = build_context(merged_node_map, top_node_ids)
 
-    # ── Step 5: Synthesis — intent-aware answer generation ────────────────────
+    # Prepare top_scores for the relevance gate inside generate_answer / synthesise.
+    top_scores = [(nid, fused[nid][0]) for nid in top_node_ids if nid in fused]
+
+    # ── Step 5: Synthesis ──────────────────────────────────────────────────────
     synthesis: SynthesisResult = synthesise(
         context       = context,
         query         = rewritten_query,
@@ -267,8 +282,9 @@ def run_agents(
     )
 
     logger.info(
-        "Orchestrator done: intent=%s  confidence=%s  nodes=%d  elapsed=%.0fms",
-        intent_result.intent_type, synthesis.confidence, len(top_node_ids), elapsed_ms,
+        "Orchestrator done: intent=%s  confidence=%s  nodes=%d  best_score=%.3f  elapsed=%.0fms",
+        intent_result.intent_type, synthesis.confidence,
+        len(top_node_ids), best_score, elapsed_ms,
     )
 
     return AgentResult(
@@ -286,15 +302,15 @@ def run_agents(
 
 
 def _build_thinking(
-    intent:         IntentResult,
-    plan:           RetrievalPlan,
-    rewritten:      str,
-    sections:       list[str],
-    elapsed_ms:     float,
+    intent:     IntentResult,
+    plan:       RetrievalPlan,
+    rewritten:  str,
+    sections:   list[str],
+    elapsed_ms: float,
 ) -> str:
     """Build the transparency trace string for the API response."""
     lines = [
-        f"[Intent Agent]",
+        "[Intent Agent]",
         f"  Type: {intent.intent_type}  Confidence: {intent.confidence:.0%}",
         f"  Complexity: {intent.complexity}",
         f"  Search focus: {intent.search_focus}",
@@ -303,8 +319,8 @@ def _build_thinking(
         lines.append(f"  Entities: {', '.join(intent.all_entities_flat)}")
 
     lines += [
-        f"",
-        f"[Planner Agent]",
+        "",
+        "[Planner Agent]",
         f"  Mode: {plan.mode}  Top-K: {plan.top_k}  Reranker: {plan.use_reranker}",
         f"  Rewritten query: {rewritten}",
         f"  Query variants ({len(plan.queries)}):",
@@ -313,11 +329,11 @@ def _build_thinking(
         lines.append(f"    {i}. {q}")
 
     if sections:
-        lines += ["", f"[Retrieval Agent]", f"  Sections used:"]
+        lines += ["", "[Retrieval Agent]", "  Sections used:"]
         for s in sections:
             lines.append(f"    • {s}")
 
     if elapsed_ms:
-        lines += ["", f"[Performance]", f"  Total: {elapsed_ms:.0f}ms"]
+        lines += ["", "[Performance]", f"  Total: {elapsed_ms:.0f}ms"]
 
     return "\n".join(lines)

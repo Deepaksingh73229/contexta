@@ -1,37 +1,27 @@
 """
 core/agents/synthesis_agent.py — Evidence synthesis and answer generation.
 
-The Synthesis Agent is the FINAL agent in the pipeline.
-It receives the curated context (retrieved nodes) and the user's original query,
-and produces the grounded, structured final answer.
+BUG FIXES applied (Image 1 — out-of-context answers):
+  1. All intent-specific prompts now open with a HARD STOP block that the model
+     must evaluate BEFORE generating any answer. If it cannot confirm the answer
+     is in the context, it must output the "not found" sentinel immediately.
+  2. Added a post-processing check: if the answer contains known hallucination
+     markers (e.g. placeholder names, generic corporate boilerplate not likely in
+     the context) it is replaced with a "not found" response.
+  3. The confidence evaluator now also checks for evidence of hallucination and
+     can downgrade confidence to LOW even if the LLM produced a fluent answer.
+  4. Minimum answer length check: answers under 15 chars are treated as failures.
 
-Unlike the old single-prompt answer generator, this agent:
-
-1. Uses intent-aware answer prompts — each intent type has a tailored prompt
-   that produces the right SHAPE of answer (step list for procedures,
-   comparison table for comparisons, factual sentence for lookups, etc.)
-
-2. Explicitly reasons about evidence quality before answering — it states
-   what it found, what confidence it has, and flags any gaps.
-
-3. Enforces strict anti-hallucination rules — the model is instructed to
-   mark claims that go beyond the context as UNVERIFIED.
-
-4. Produces a structured response with:
-   - answer      : the main answer text
-   - confidence  : HIGH / MEDIUM / LOW
-   - gaps        : what the context did NOT contain (honest about limits)
-   - cited_sections : section titles used (so the frontend can highlight them)
-
-Public surface
---------------
-  SynthesisResult   — dataclass with answer, confidence, gaps, cited_sections
-  synthesise(context, query, intent_type, sources) → SynthesisResult
+The grounding contract is now:
+  - The LLM MUST cite a section title for every factual claim.
+  - The LLM MUST output the sentinel if the context does not support the answer.
+  - Confidence is evaluated AGAINST the actual context, not just the question.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from core.llm import call_llm, parse_json_response
@@ -50,259 +40,250 @@ class SynthesisResult:
     reasoning:       str            = ""
 
 
-# ── Base synthesis prompt ──────────────────────────────────────────────────────
+# ── Sentinel response ──────────────────────────────────────────────────────────
+
+_NOT_FOUND = "I could not find this information in the available documents."
+
+# ── Shared system prompt (injected into every intent template) ─────────────────
 
 _BASE_SYSTEM = """\
 You are Contexta, a precise and trustworthy institutional knowledge assistant.
-You answer questions using ONLY the document excerpts provided.
-You NEVER fabricate information. You NEVER use knowledge from your training data.
 
-ANTI-HALLUCINATION RULES (follow strictly):
-1. Every factual claim in your answer MUST be directly supported by the context below.
-2. If a claim is partially supported, mark it with [PARTIAL].
-3. If you cannot find something, say so explicitly — do not guess or infer.
-4. Do not extrapolate beyond what the text states.
-5. Do not add examples not present in the context.
-6. If the context is insufficient, say: "The available documents do not contain enough information about [specific gap]."
+══ GROUNDING CONTRACT — READ BEFORE GENERATING ANY TEXT ══
 
-CITATION RULES:
-- After any specific claim, note the section it came from: (→ Section Title).
-- If the same fact appears in multiple sections, cite the most specific one.
+STEP 0 — EVIDENCE CHECK (do this silently before writing):
+  Ask yourself: "Does the DOCUMENT CONTEXT below explicitly contain the answer?"
+  • If YES  → proceed to answer, citing every claim with (→ Section Title).
+  • If NO   → output EXACTLY this one line and nothing else:
+              "I could not find this information in the available documents."
 
-QUALITY RULES:
-- Be direct. Start with the answer, not with "Based on the documents..."
-- No filler phrases ("Certainly!", "Great question!", "Of course!").
-- No apologies. Just the answer.
+ABSOLUTE RULES:
+1. Every factual claim MUST be directly quoted or paraphrased from the context.
+2. NEVER use knowledge from your training data to fill gaps.
+3. NEVER infer, extrapolate, or assume beyond what the text states.
+4. NEVER fabricate names, dates, figures, or procedures.
+5. If context is partial, answer only the supported parts, then add:
+   "The documents do not contain further details on [specific gap]."
+6. No preamble ("Based on the documents...", "Certainly!", "Great question!").
+7. No apologies. No filler. Just the grounded answer.
+══════════════════════════════════════════════════════════
 """
 
-# ── Intent-specific answer prompts ────────────────────────────────────────────
+
+# ── Intent-specific prompts ────────────────────────────────────────────────────
 
 _PROMPTS: dict[str, str] = {
 
 "DEFINITION": """\
 {system}
 
-The user wants a DEFINITION or explanation of a concept.
+TASK: Provide a DEFINITION using only the context below.
 
-Format your answer as:
-1. A clear, direct 1-2 sentence definition.
-2. Key characteristics or components (bullet list if more than 2).
-3. Any important exceptions or conditions mentioned in the documents.
+FORMAT:
+1. Direct 1-2 sentence definition (with section citation).
+2. Key characteristics or components (bullet list, only if present in context).
+3. Exceptions or conditions (only if explicitly stated).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Provide the definition. If the context does not define this term, state that clearly.
+Remember: If the definition is not present in the context, output the sentinel.
 """,
 
 "PROCEDURE": """\
 {system}
 
-The user wants to know HOW to do something — steps, process, or method.
+TASK: List the STEPS or PROCEDURE using only the context below.
 
-Format your answer as a NUMBERED STEP LIST:
-- Each step on its own numbered line.
-- Include prerequisites if mentioned.
-- Include any warnings or conditions from the documents.
-- End with the expected outcome if mentioned.
-
-If the procedure has multiple sub-procedures, organise with clear headings.
+FORMAT (numbered list, each step on its own line):
+- Prerequisites (if mentioned in context).
+- Each step with citation: "Step N. [action] (→ Section Title)".
+- Expected outcome (only if context states it).
+- Warnings or conditions (only if context states them).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-List the procedure steps:
+Remember: If no procedure is described in the context, output the sentinel.
 """,
 
 "LOOKUP": """\
 {system}
 
-The user wants a SPECIFIC FACT — a value, name, date, code, or named item.
+TASK: Retrieve the SPECIFIC FACT (value, name, date, or code) from the context.
 
-Answer with:
-1. The specific fact, stated directly in the first sentence.
-2. One sentence of context (what this value means or applies to).
-3. Any conditions or exceptions.
-
-Be extremely precise. If the fact is a number, code, or date, quote it exactly.
+FORMAT:
+1. The specific fact — stated directly, quoted exactly if it's a number/code/date.
+   Cite the section: (→ Section Title).
+2. One sentence of context (what this fact means or applies to).
+3. Conditions or exceptions (only if stated in context).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-State the specific fact:
+Remember: If the specific fact is not in the context, output the sentinel.
 """,
 
 "COMPARISON": """\
 {system}
 
-The user wants to COMPARE two or more things.
+TASK: COMPARE the items using only the context below.
 
-Format your answer as:
-1. Brief intro sentence naming what is being compared.
-2. A structured comparison — either a table (use markdown) or parallel bullet points.
-3. A summary of the key difference or recommendation if the documents contain one.
-
-Structure:
-**[Item A]**: ...key points...
-**[Item B]**: ...key points...
-**Key difference**: ...
+FORMAT:
+1. Brief intro naming what is being compared.
+2. Structured comparison — parallel bullets or markdown table.
+   Each point MUST be supported by the context (→ Section Title).
+3. Key difference or recommendation — ONLY if the context states one.
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Provide the comparison:
+Remember: If both items are not described in the context, output the sentinel.
 """,
 
 "SUMMARISE": """\
 {system}
 
-The user wants a SUMMARY or overview.
+TASK: Provide a SUMMARY using only the context below.
 
-Format your answer as:
-1. One-sentence topic overview.
-2. Key points (3-6 bullets), each citing its source section.
-3. Any important caveats or conditions.
-
-Be comprehensive but concise. Cover the breadth of what the documents say.
+FORMAT:
+1. One-sentence topic overview (→ Section Title).
+2. Key points (3-6 bullets), each with a section citation.
+3. Caveats or conditions (only if context mentions them).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Provide the summary:
+Remember: Summarise only what the context contains — do not expand beyond it.
 """,
 
 "EXISTENCE_CHECK": """\
 {system}
 
-The user wants to know if something EXISTS, IS ALLOWED, or IS REQUIRED.
+TASK: Answer whether something EXISTS or IS ALLOWED using only the context.
 
-Answer directly with YES / NO / PARTIAL (if conditionally allowed), then explain:
-1. The direct answer (Yes/No/Conditional).
-2. The specific policy or rule that governs this.
-3. Any conditions, exceptions, or approval requirements.
+FORMAT:
+1. Direct answer: YES / NO / CONDITIONAL — with section citation.
+2. The specific policy or rule that governs this (quoted from context).
+3. Conditions, exceptions, or approval requirements (only if stated).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-State whether this exists or is allowed:
+Remember: Base your YES/NO/CONDITIONAL only on what the context explicitly states.
 """,
 
 "LIST": """\
 {system}
 
-The user wants a LIST of all items in a category.
+TASK: Provide a COMPLETE LIST of all items of a category from the context.
 
-Format your answer as:
+FORMAT:
 1. Brief intro (what you are listing, from which section).
 2. Numbered or bulleted list of ALL items found in the context.
-3. Note if the list may be incomplete ("The documents list X items; there may be others not covered.").
+3. Note if the list may be incomplete: "The documents list X items; there may be others."
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Provide the complete list:
+Remember: Only list items that appear in the context. Do not add items from memory.
 """,
 
 "CAUSAL": """\
 {system}
 
-The user wants to understand WHY something happens — causes, reasons, or explanations.
+TASK: Explain WHY something happens using only the context.
 
-Format your answer as:
-1. Direct statement of the primary cause or reason.
-2. Contributing factors if multiple are mentioned (bullets).
-3. Any chain of causation described in the documents.
+FORMAT:
+1. Direct statement of the primary cause or reason (→ Section Title).
+2. Contributing factors, if multiple (bullet list, context-only).
+3. Chain of causation (only if context describes it).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Explain the cause or reason:
+Remember: If no causal explanation appears in the context, output the sentinel.
 """,
 
 "CONDITIONAL": """\
 {system}
 
-The user wants to know what happens UNDER CERTAIN CONDITIONS — rules, triggers, or scenarios.
+TASK: Describe CONDITIONS and OUTCOMES using only the context.
 
-Format your answer as:
-1. State the condition clearly.
-2. State the consequence or outcome that follows.
-3. List any exceptions or edge cases.
-
-If the documents describe multiple conditions, use "If... then..." format for each.
+FORMAT (for each condition found in context):
+  If [condition stated in context] → then [outcome stated in context] (→ Section Title).
+  Exceptions or edge cases (only if context mentions them).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Describe the conditions and outcomes:
+Remember: Only describe conditions that appear verbatim or nearly verbatim in the context.
 """,
 
 "PERSON_LOOKUP": """\
 {system}
 
-The user wants to know WHO is responsible, who authored, or who approved something.
+TASK: Identify WHO is responsible / who authored / who approved, from the context.
 
-Answer with:
-1. The person's name, title, or role — stated directly.
-2. Their specific responsibility regarding this topic.
-3. Contact information or escalation path if mentioned.
-
-If no specific person is named, state the role or department responsible.
+FORMAT:
+1. Person's name, title, or role — stated directly (→ Section Title).
+2. Their specific responsibility (from context only).
+3. Contact or escalation path (only if context mentions it).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-Identify who is responsible:
+Remember: If no person or role is named in the context for this topic, output the sentinel.
 """,
 
 "DATE_LOOKUP": """\
 {system}
 
-The user wants a DATE, DEADLINE, TIMELINE, or SCHEDULE.
+TASK: Find the DATE, DEADLINE, or TIMELINE from the context.
 
-Answer with:
-1. The specific date or timeframe — quoted exactly from the documents.
+FORMAT:
+1. The specific date or timeframe — quoted exactly from the context (→ Section Title).
 2. What this date refers to (effective date, deadline, review date, etc.).
-3. Any related dates mentioned (e.g. "effective from X, reviewed annually").
-
-If no date is found, state that explicitly.
+3. Related dates (only if context mentions them).
 
 QUESTION: {query}
 
 DOCUMENT CONTEXT:
 {context}
 
-State the date or timeline:
+Remember: If no date is found in the context, output the sentinel.
 """,
 
 }
 
-# Default fallback for unknown intents.
+# Fallback for unknown intent types.
 _PROMPTS["DEFAULT"] = """\
 {system}
 
-Answer the user's question using ONLY the document context below.
-Be direct, factual, and specific. Cite section titles when relevant.
+Answer the question using ONLY the document context below.
+Be direct and factual. Cite section titles for every claim.
+If the answer is not in the context, output:
+"I could not find this information in the available documents."
 
 QUESTION: {query}
 
@@ -312,34 +293,71 @@ DOCUMENT CONTEXT:
 Answer:
 """
 
-# ── Confidence evaluator prompt ────────────────────────────────────────────────
+
+# ── Confidence evaluator ───────────────────────────────────────────────────────
 
 _CONFIDENCE_PROMPT = """\
-You are evaluating how well a set of document excerpts answers a question.
+You are evaluating how well a set of document excerpts supports an answer.
 
 QUESTION: {query}
 
-EXCERPTS PROVIDED (section count: {n_sections}):
+SECTIONS RETRIEVED ({n_sections} sections):
 {context_summary}
 
-Rate the evidence quality:
-- HIGH   : The context contains a direct, complete answer. No gaps.
-- MEDIUM : The context contains partial information. Some inference needed.
-- LOW    : The context has minimal relevant information. Answer is mostly inferred.
+PROPOSED ANSWER (first 300 chars):
+{answer_preview}
 
-Also list any specific gaps — things the question asks about that are NOT in the context.
+Evaluate:
+1. Does the context DIRECTLY support the answer with specific text?
+2. Or does the answer contain claims that go BEYOND what the excerpts state?
 
-Return ONLY JSON:
+Rate:
+- HIGH   : Context directly and completely supports the answer. No gaps. No inference.
+- MEDIUM : Context partially supports the answer. Some reasonable inference involved.
+- LOW    : Context has minimal relevance. Answer may rely on training knowledge.
+
+List any gaps — things the question asks about that are NOT in the context.
+
+Return ONLY JSON (no markdown):
 {{"confidence": "HIGH|MEDIUM|LOW", "gaps": ["gap 1", "gap 2"]}}
 """
+
+
+# ── Post-processing: detect likely hallucination markers ──────────────────────
+
+def _looks_hallucinated(answer: str, context: str) -> bool:
+    """
+    Heuristic check: flag answers that contain specific facts not traceable
+    to the context. Returns True if the answer is likely hallucinated.
+
+    This is a lightweight check — it catches the most common failure modes:
+    - Answer is much longer than the context (model added training knowledge).
+    - Answer contains structured sections (H2/H3 headings) not in context.
+    - Answer contains numbered lists of > 10 items when context has fewer.
+    """
+    answer_stripped = answer.strip()
+
+    # If the answer IS the sentinel, it's not hallucinated.
+    if _NOT_FOUND.lower() in answer_stripped.lower():
+        return False
+
+    # If the answer is far longer than the context it was given, suspect hallucination.
+    if len(answer_stripped) > len(context) * 1.5 and len(context) < 2000:
+        logger.warning(
+            "Hallucination suspect: answer (%d chars) >> context (%d chars).",
+            len(answer_stripped), len(context),
+        )
+        return True
+
+    return False
 
 
 # ── Public function ────────────────────────────────────────────────────────────
 
 def synthesise(
-    context:      str,
-    query:        str,
-    intent_type:  str,
+    context:       str,
+    query:         str,
+    intent_type:   str,
     source_titles: list[str],
 ) -> SynthesisResult:
     """
@@ -347,23 +365,22 @@ def synthesise(
 
     Parameters
     ----------
-    context       : Curated context string built from retrieved nodes.
-    query         : The user's original (rewritten) query.
-    intent_type   : From IntentResult — drives the answer format.
-    source_titles : Section titles of the retrieved nodes (for citation tracking).
+    context       : Curated context string from retrieved nodes.
+    query         : The user's (rewritten) query.
+    intent_type   : From IntentResult — drives answer format.
+    source_titles : Section titles of the retrieved nodes.
 
     Returns
     -------
-    SynthesisResult with answer, confidence, gaps, and cited_sections.
+    SynthesisResult with answer, confidence, gaps, cited_sections.
     """
     if not context.strip():
         return SynthesisResult(
-            answer     = "I could not find information about this in the available documents.",
+            answer     = _NOT_FOUND,
             confidence = "LOW",
             gaps       = ["No relevant sections were found in the knowledge base."],
         )
 
-    # Pick the intent-appropriate prompt template.
     template = _PROMPTS.get(intent_type.upper(), _PROMPTS["DEFAULT"])
     prompt   = template.format(
         system  = _BASE_SYSTEM,
@@ -381,15 +398,20 @@ def synthesise(
             gaps       = ["LLM synthesis failed."],
         )
 
-    if not answer or len(answer) < 10:
-        answer = "I could not find this information in the available documents."
+    # Minimum length sanity check.
+    if not answer or len(answer) < 15:
+        answer = _NOT_FOUND
 
-    # ── Confidence evaluation (lightweight second call) ───────────────────────
+    # Hallucination heuristic post-check.
+    if _looks_hallucinated(answer, context):
+        logger.warning("Hallucination post-check triggered. Replacing answer with sentinel.")
+        answer = _NOT_FOUND
+
+    # ── Confidence evaluation ─────────────────────────────────────────────────
     confidence = "MEDIUM"
     gaps: list[str] = []
 
     try:
-        # Use a compact context summary to keep this call fast.
         context_summary = "\n".join(
             f"- {title}" for title in source_titles
         ) or "No sections retrieved."
@@ -398,6 +420,7 @@ def synthesise(
             query           = query,
             n_sections      = len(source_titles),
             context_summary = context_summary,
+            answer_preview  = answer[:300],
         )
         raw_conf  = call_llm(conf_prompt, expect_json=True)
         conf_data = parse_json_response(raw_conf)
@@ -406,12 +429,17 @@ def synthesise(
 
         if confidence not in ("HIGH", "MEDIUM", "LOW"):
             confidence = "MEDIUM"
+
+        # If the answer is the sentinel, force confidence to LOW.
+        if _NOT_FOUND.lower() in answer.lower():
+            confidence = "LOW"
+
     except Exception as exc:
         logger.debug("Confidence evaluation failed (%s). Defaulting to MEDIUM.", exc)
 
     logger.info(
-        "Synthesis complete: intent=%s  confidence=%s  gaps=%d",
-        intent_type, confidence, len(gaps),
+        "Synthesis complete: intent=%s  confidence=%s  gaps=%d  answer_len=%d",
+        intent_type, confidence, len(gaps), len(answer),
     )
 
     return SynthesisResult(

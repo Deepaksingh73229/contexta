@@ -64,6 +64,11 @@ def _load_or_create_secret() -> str:
 
 AUTH_SECRET_KEY: str = _load_or_create_secret()
 
+# LLM PROVIDER
+LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama").lower()
+GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
 # ── Ollama LLM ────────────────────────────────────────────────────────────────
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 

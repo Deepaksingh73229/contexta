@@ -1,20 +1,15 @@
 """
-services/query_service.py — Query orchestration service.
+services/query_service.py — Multi-agent query orchestration service.
 
-v5.0 — Direct Retrieval (agents bypassed, not deleted).
+Integrates the full multi-agent pipeline:
+  Intent Agent → Planner Agent → Parallel Retrieval → Synthesis Agent
 
-The multi-agent pipeline (Intent Agent → Planner → Synthesis Agent) is fully
-preserved in core/agents/ and can be re-enabled by swapping the import below.
-This version routes all queries through the new direct_retriever pipeline which:
-
-  - Makes ZERO LLM calls before answer generation (was 3–4 before).
-  - Uses deterministic query expansion instead of LLM rewriting.
-  - Uses MMR diversification instead of simple cosine dedup.
-  - Enriches results with parent-section context automatically.
-  - Pre-warms the cross-encoder at startup to eliminate cold-start latency.
-
-To re-enable agents: replace the `_run_direct(...)` call in `answer_query()`
-with `run_agents(...)` from `core.agents.orchestrator`.
+Speed optimisations:
+  - Intent analysis + query rewriting run in parallel (independent).
+  - All query × document retrieval combinations run in parallel threads.
+  - FAISS indexes are loaded once and kept in a module-level LRU cache.
+  - Query path cache returns immediately for repeated queries.
+  - Embedding model is a singleton — no cold-start per call.
 
 Public surface
 --------------
@@ -25,16 +20,13 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import HTTPException, status
 
 from config import TREE_DIR
-from core.direct_retriever import (
-    DirectResult,
-    direct_retrieve_and_answer,
-    warm_cross_encoder,
-)
+from core.agents.orchestrator import run_agents, AgentResult
 from core.embeddings import load_faiss_index, FaissIndex
 from core.tree import load_tree, create_node_map, TreeNode
 from models.schemas import QueryRequest, QueryResponse, SourceCitation
@@ -43,15 +35,13 @@ from services import query_cache
 
 logger = logging.getLogger(__name__)
 
-# ── Pre-warm cross-encoder at import time (eliminates cold-start double-load) ──
-warm_cross_encoder()
 
-
-# ── In-memory caches (tree JSON + FAISS index, keyed by doc_id) ───────────────
+# ── FAISS index cache (avoid reloading from disk on every query) ───────────────
+# Keyed by doc_id. The cache holds up to 32 documents in memory.
+# On a server with multiple documents this saves ~50-200ms per query.
 
 _tree_cache:  dict[str, TreeNode]   = {}
 _faiss_cache: dict[str, FaissIndex] = {}
-
 
 def _load_tree_cached(doc_id: str) -> TreeNode:
     if doc_id not in _tree_cache:
@@ -68,9 +58,9 @@ def _load_faiss_cached(doc_id: str) -> FaissIndex | None:
         try:
             _faiss_cache[doc_id] = load_faiss_index(faiss_path)
         except FileNotFoundError:
-            # Legacy docs: build FAISS inline from tree embeddings.
+            # Try to build inline from tree embeddings (legacy docs).
             try:
-                tree      = _load_tree_cached(doc_id)
+                tree = _load_tree_cached(doc_id)
                 all_nodes = tree.all_nodes()
                 node_ids  = [n.node_id for n in all_nodes if n.embedding]
                 embeds    = [n.embedding for n in all_nodes if n.embedding]
@@ -113,9 +103,10 @@ def _build_trees_and_indexes(
     doc_ids: list[str],
 ) -> list[tuple[str, str, TreeNode, FaissIndex]]:
     """
-    Load (or retrieve from memory cache) all trees and FAISS indexes.
+    Load (or retrieve from cache) all trees and FAISS indexes for the given doc_ids.
+
     Returns list of (doc_id, filename, tree, faiss_index).
-    Skips documents that have no FAISS index yet (still ingesting).
+    Only includes documents that have both a tree and a FAISS index.
     """
     result = []
     for doc_id in doc_ids:
@@ -132,94 +123,46 @@ def _build_trees_and_indexes(
     return result
 
 
-def _direct_result_to_sources(
-    result:            DirectResult,
+def _agent_result_to_sources(
+    agent_result: AgentResult,
     trees_and_indexes: list[tuple[str, str, TreeNode, FaissIndex]],
 ) -> list[SourceCitation]:
-    """Convert DirectResult.sources to SourceCitation Pydantic objects."""
-    citations = []
+    """Convert agent node_ids back to SourceCitation objects."""
+    # Build a flat map: node_id → (doc_id, filename, node)
+    node_lookup: dict[str, tuple[str, str, TreeNode]] = {}
+    for doc_id, filename, tree, _ in trees_and_indexes:
+        node_map = create_node_map(tree)
+        for nid, node in node_map.items():
+            node_lookup[nid] = (doc_id, filename, node)
+
+    sources = []
     seen: set[str] = set()
-    for nid, score, title, doc_id, filename in result.sources:
-        if nid not in seen:
-            citations.append(SourceCitation(
+    for nid in agent_result.node_ids:
+        if nid in node_lookup and nid not in seen:
+            doc_id, filename, node = node_lookup[nid]
+            sources.append(SourceCitation(
                 doc_id   = doc_id,
                 node_id  = nid,
-                title    = title,
+                title    = node.title,
                 filename = filename,
             ))
             seen.add(nid)
-    return citations
-
-
-# ── Cache helpers ──────────────────────────────────────────────────────────────
-
-def _cache_key_doc_ids(target_ids: list[str]) -> list[str]:
-    return sorted(target_ids)
-
-
-def _try_cache_hit(
-    query:             str,
-    target_ids:        list[str],
-    trees_and_indexes: list[tuple[str, str, TreeNode, FaissIndex]],
-) -> QueryResponse | None:
-    """
-    Check the query cache and return a QueryResponse if there's a valid hit.
-    Returns None on miss.
-    """
-    cache_hit = query_cache.get(query, doc_ids=target_ids)
-    if cache_hit is None:
-        return None
-
-    # Re-generate answer from cached node IDs (fresh LLM call, same retrieval).
-    merged_node_map: dict[str, TreeNode] = {}
-    sources: list[SourceCitation] = []
-
-    for doc_id, filename, tree, _ in trees_and_indexes:
-        nm = create_node_map(tree)
-        merged_node_map.update(nm)
-        for nid in cache_hit.node_ids:
-            if nid in nm:
-                sources.append(SourceCitation(
-                    doc_id   = doc_id,
-                    node_id  = nid,
-                    title    = nm[nid].title,
-                    filename = filename,
-                ))
-
-    from core.direct_retriever import _generate_answer, _build_context_string
-    context = _build_context_string(cache_hit.node_ids, merged_node_map)
-    answer  = _generate_answer(query, context)
-
-    return QueryResponse(
-        status       = "success",
-        answer       = answer,
-        confidence   = "HIGH",
-        intent_type  = "LOOKUP",
-        search_focus = "",
-        gaps         = [],
-        sources      = sources,
-        thinking     = f"[Cache hit — age {cache_hit.age_s:.0f}s]\nNodes: {cache_hit.node_ids}",
-        elapsed_ms   = 0.0,
-    )
+    return sources
 
 
 # ── Public service function ────────────────────────────────────────────────────
 
 async def answer_query(request: QueryRequest) -> QueryResponse:
     """
-    Route a user query through the direct retrieval pipeline.
+    Route a user query through the full multi-agent pipeline.
 
     Flow
     ----
     1. Cache lookup — return immediately if hit.
-    2. Load trees + FAISS indexes (from in-memory cache).
-    3. Run direct_retrieve_and_answer() — deterministic expansion + MMR + rerank.
-    4. Store result in query cache.
+    2. Load trees + FAISS indexes (from in-memory cache where possible).
+    3. Run orchestrator: Intent → Planner → Parallel Retrieval → Synthesis.
+    4. Store result in cache.
     5. Return structured QueryResponse.
-
-    To restore the agent pipeline, replace step 3 with:
-        from core.agents.orchestrator import run_agents
-        agent_result = run_agents(request.query, trees_and_indexes, doc_titles)
     """
     import time
     t0 = time.perf_counter()
@@ -227,7 +170,6 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
     try:
         target_ids = request.doc_ids or _all_doc_ids()
 
-        # No documents ingested at all.
         if not target_ids:
             return QueryResponse(
                 status       = "success",
@@ -242,14 +184,40 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
             )
 
         # ── 1. Cache lookup ───────────────────────────────────────────────────
+        cache_hit = query_cache.get(request.query, doc_ids=target_ids)
+        if cache_hit:
+            trees_and_indexes = _build_trees_and_indexes(cache_hit.doc_ids or target_ids)
+            if trees_and_indexes:
+                # Re-run synthesis on cached nodes (fresh answer, same retrieval).
+                from core.retriever import build_context, generate_answer
+                merged_node_map = {}
+                sources: list[SourceCitation] = []
+                for doc_id, filename, tree, _ in trees_and_indexes:
+                    nm = create_node_map(tree)
+                    merged_node_map.update(nm)
+                    for nid in cache_hit.node_ids:
+                        if nid in nm:
+                            sources.append(SourceCitation(
+                                doc_id=doc_id, node_id=nid,
+                                title=nm[nid].title, filename=filename,
+                            ))
+
+                answer = generate_answer(merged_node_map, cache_hit.node_ids, request.query)
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                return QueryResponse(
+                    status       = "success",
+                    answer       = answer,
+                    confidence   = "HIGH",   # cached result was validated previously
+                    intent_type  = "LOOKUP",
+                    search_focus = "",
+                    gaps         = [],
+                    sources      = sources,
+                    thinking     = f"[Cache hit — age {cache_hit.age_s:.0f}s]\nRetrieved from query cache.",
+                    elapsed_ms   = elapsed_ms,
+                )
+
+        # ── 2. Load trees + FAISS indexes (cached in memory) ─────────────────
         trees_and_indexes = _build_trees_and_indexes(target_ids)
-
-        if trees_and_indexes:
-            cached_response = _try_cache_hit(request.query, target_ids, trees_and_indexes)
-            if cached_response is not None:
-                return cached_response
-
-        # ── 2. Validate we have something to search ───────────────────────────
         if not trees_and_indexes:
             return QueryResponse(
                 status       = "success",
@@ -263,47 +231,49 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
                 elapsed_ms   = 0.0,
             )
 
-        # ── 3. Direct retrieval pipeline (agents bypassed) ────────────────────
-        result: DirectResult = direct_retrieve_and_answer(
+        # ── 3. Run multi-agent orchestrator ───────────────────────────────────
+        doc_titles = get_doc_titles()
+
+        agent_result: AgentResult = run_agents(
             raw_query          = request.query,
             trees_and_indexes  = trees_and_indexes,
-            top_k              = 5,
+            doc_titles         = doc_titles,
         )
 
         # ── 4. Build sources ──────────────────────────────────────────────────
-        sources = _direct_result_to_sources(result, trees_and_indexes)
+        sources = _agent_result_to_sources(agent_result, trees_and_indexes)
 
-        # ── 5. Store in query cache ───────────────────────────────────────────
-        if result.sources:
-            node_ids_to_cache = [nid for nid, _, _, _, _ in result.sources]
-            doc_ids_in_result = list({doc_id for _, _, _, doc_id, _ in result.sources})
+        # ── 5. Store in cache ─────────────────────────────────────────────────
+        if agent_result.node_ids:
             query_cache.put(
                 raw_query = request.query,
-                node_ids  = node_ids_to_cache,
-                doc_ids   = doc_ids_in_result,
+                node_ids  = agent_result.node_ids,
+                doc_ids   = list({s.doc_id for s in sources}),
             )
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
         logger.info(
-            "Query complete: confidence=%s  sources=%d  elapsed=%.0fms",
-            result.confidence, len(sources), elapsed_ms,
+            "Query complete: intent=%s  confidence=%s  sources=%d  elapsed=%.0fms",
+            agent_result.intent_type, agent_result.confidence,
+            len(sources), elapsed_ms,
         )
 
         return QueryResponse(
             status       = "success",
-            answer       = result.answer,
-            confidence   = result.confidence,
-            intent_type  = "LOOKUP",    # direct retriever uses intent_hint internally
-            search_focus = f"[{result.query_variants[0]}]" if result.query_variants else "",
-            gaps         = [],          # populated by confidence evaluator in DirectResult
+            answer       = agent_result.answer,
+            confidence   = agent_result.confidence,
+            intent_type  = agent_result.intent_type,
+            search_focus = agent_result.search_focus,
+            gaps         = agent_result.gaps,
             sources      = sources,
-            thinking     = result.thinking,
+            thinking     = agent_result.thinking,
             elapsed_ms   = elapsed_ms,
         )
 
     except HTTPException:
         raise
+
     except Exception as exc:
         logger.exception("Query service error: query=%r", request.query[:60])
         raise HTTPException(
