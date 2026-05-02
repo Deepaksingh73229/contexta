@@ -8,10 +8,13 @@ export const metadata: Metadata = { title: "Upload Documents" }
 export default function UploadPage() {
     return (
         <AppShell requiredPermission="ingest:create">
-            <div className="mx-auto max-w-3xl px-4 py-8 space-y-8">
-                <div>
-                    <h1 className="text-2xl font-semibold tracking-tight">Upload Documents</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
+            <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+                <div className="flex flex-col gap-3">
+                    <p className="text-5xl font-black tracking-tight text-violet-500/80">
+                        Upload Documents
+                    </p>
+
+                    <p className="text-sm text-muted-foreground">
                         Upload PDF files to ingest them into the knowledge base. Processing happens in the background.
                     </p>
                 </div>

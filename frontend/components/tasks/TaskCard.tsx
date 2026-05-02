@@ -125,7 +125,7 @@ export function TaskCard({ taskId }: TaskCardProps) {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="size-8 rounded-lg text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                            className="size-8 rounded-lg text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
                             onClick={() => dispatch(deleteTask(taskId))}
                             aria-label="Delete task log"
                         >

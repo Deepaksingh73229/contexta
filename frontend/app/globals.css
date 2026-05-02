@@ -136,3 +136,331 @@
   background-color: #999DAA;
   border-radius: 5px;
 }
+
+
+
+
+
+/* animations.css — Premium motion system for Contexta Chat */
+
+/* ── Message entrance animations ─────────────────────────────────────────── */
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulseGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+  }
+
+  50% {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.25);
+  }
+}
+
+@keyframes typingBounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+
+  30% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────── */
+
+.animate-slide-in-right {
+  animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(139, 92, 246, 0.08) 50%,
+      transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.animate-typing-dot {
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.animate-typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.animate-typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Glass morphism utilities ─────────────────────────────────────────────── */
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.glass-dark {
+  background: rgba(10, 10, 10, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -2px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.glass-input-dark {
+  background: rgba(20, 20, 20, 0.8);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -2px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ── Premium scrollbar ───────────────────────────────────────────────────── */
+
+.scrollbar-premium::-webkit-scrollbar {
+  width: 2px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-premium::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 2px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.dark .scrollbar-premium::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.4);
+}
+
+.dark .scrollbar-premium::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.6);
+}
+
+/* ── Citation tooltip animation ──────────────────────────────────────────── */
+
+.citation-tooltip {
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.citation-chip:hover .citation-tooltip {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+/* ── Answer prose styling ────────────────────────────────────────────────── */
+
+.answer-prose p {
+  margin-bottom: 1em;
+}
+
+.answer-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.answer-prose strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.answer-prose em {
+  font-style: italic;
+}
+
+.answer-prose ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.answer-prose ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.answer-prose li {
+  margin-bottom: 0.25em;
+}
+
+.answer-prose code {
+  font-family: 'Geist Mono', 'SF Mono', monospace;
+  font-size: 0.9em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+}
+
+.dark .answer-prose code {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.answer-prose blockquote {
+  border-left: 3px solid #8b5cf6;
+  padding-left: 1em;
+  margin-left: 0;
+  margin-bottom: 1em;
+  color: #64748b;
+  font-style: italic;
+}
+
+.dark .answer-prose blockquote {
+  color: #94a3b8;
+  border-left-color: #a78bfa;
+}
+
+/* ── Loading skeleton shimmer ───────────────────────────────────────────── */
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg,
+      rgba(226, 232, 240, 0.6) 25%,
+      rgba(241, 245, 249, 0.8) 50%,
+      rgba(226, 232, 240, 0.6) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg,
+      rgba(51, 65, 85, 0.6) 25%,
+      rgba(71, 85, 105, 0.8) 50%,
+      rgba(51, 65, 85, 0.6) 75%);
+  background-size: 200% 100%;
+}

@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Documents" }
 export default function DocumentsPage() {
     return (
         <AppShell requiredPermission="documents:list">
-            <div className="mx-auto max-w-4xl px-4 py-8">
+            <div className="mx-auto max-w-5xl px-4 py-8">
                 <DocumentsView />
             </div>
         </AppShell>

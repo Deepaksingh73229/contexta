@@ -97,17 +97,17 @@ class SourceCitation(BaseModel):
 
 class QueryResponse(BaseModel):
     """
-    Full query response with direct retrieval metadata.
+    Full query response — now includes multi-agent structured metadata.
 
     Fields
     ------
-    answer          : The main answer text.
+    answer          : The main answer text (intent-formatted).
     confidence      : HIGH | MEDIUM | LOW — how well the context supported the answer.
-    intent_type     : Detected query intent (DEFINITION, PROCEDURE, LOOKUP, etc.)
-    search_focus    : Primary query variant used for retrieval.
+    intent_type     : Classified query intent (DEFINITION, PROCEDURE, LOOKUP, etc.)
+    search_focus    : What the agents were searching for (1 sentence).
     gaps            : Topics the documents did NOT cover (honest about limits).
     sources         : Retrieved document sections with doc + node IDs.
-    thinking        : Full retrieval pipeline trace.
+    thinking        : Full multi-agent reasoning trace.
     elapsed_ms      : Total pipeline time in milliseconds.
     """
     status:       str

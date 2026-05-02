@@ -464,13 +464,6 @@ def run_pipeline(
         # Invalidate cached queries for this doc (re-ingest case).
         invalidate_doc(doc_id)
 
-        # Invalidate in-memory tree/FAISS caches so subsequent queries see fresh data.
-        try:
-            from services.query_service import invalidate_doc_caches
-            invalidate_doc_caches(doc_id)
-        except Exception as exc:
-            logger.warning("Could not invalidate query-service caches for doc_id=%s: %s", doc_id, exc)
-
         # Clean up checkpoint — no longer needed.
         _delete_checkpoint(doc_id)
 

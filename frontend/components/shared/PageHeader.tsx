@@ -14,9 +14,10 @@ export function PageHeader({ title, description, action, className }: PageHeader
             className
         )}>
             <div className="space-y-1.5 flex-1 min-w-0">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white truncate">
+                <p className="text-5xl font-black tracking-tight text-violet-500/80">
                     {title}
-                </h1>
+                </p>
+
                 {description && (
                     <p className="text-[14px] leading-relaxed text-neutral-500 dark:text-neutral-400 max-w-2xl">
                         {description}

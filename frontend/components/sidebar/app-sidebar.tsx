@@ -39,7 +39,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
     return (
         <aside
             className={cn(
-                "relative flex h-screen flex-col bg-neutral-50/80 dark:bg-[#050505]/80 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] border-r border-neutral-200/50 dark:border-white/[0.05] z-40",
+                "relative flex h-screen flex-col bg-neutral-50 dark:bg-neutral-900 transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] border-r-4 z-40",
                 collapsed ? "w-19" : "w-64"
             )}
         >
@@ -51,7 +51,7 @@ export function AppSidebar({ collapsed, onToggle }: SidebarProps) {
                 <Link href="/dashboard" className="flex items-center gap-3 group transition-all duration-300">
                     <ContextaLogo size={collapsed ? "sm" : "md"} className="transition-transform group-hover:scale-105" />
                     {!collapsed && (
-                        <span className="font-bold text-lg tracking-tight text-neutral-900 dark:text-white">
+                        <span className="font-black text-2xl tracking-tight text-neutral-700 dark:text-neutral-300">
                             Contexta
                         </span>
                     )}

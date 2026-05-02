@@ -1,24 +1,12 @@
 """
 services/query_service.py — Query orchestration service.
 
-v5.0 — Direct Retrieval (agents bypassed, not deleted).
-
-The multi-agent pipeline (Intent Agent → Planner → Synthesis Agent) is fully
-preserved in core/agents/ and can be re-enabled by swapping the import below.
-This version routes all queries through the new direct_retriever pipeline which:
-
-  - Makes ZERO LLM calls before answer generation (was 3–4 before).
-  - Uses deterministic query expansion instead of LLM rewriting.
-  - Uses MMR diversification instead of simple cosine dedup.
-  - Enriches results with parent-section context automatically.
-  - Pre-warms the cross-encoder at startup to eliminate cold-start latency.
-
-To re-enable agents: replace the `_run_direct(...)` call in `answer_query()`
-with `run_agents(...)` from `core.agents.orchestrator`.
+Direct retrieval pipeline with zero pre-answer LLM calls.
 
 Public surface
 --------------
   answer_query(request) → QueryResponse
+  invalidate_doc_caches(doc_id) → None
 """
 
 from __future__ import annotations
@@ -29,11 +17,13 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from config import TREE_DIR
+from config import TREE_DIR, MULTI_QUERY_ENABLED, MULTI_QUERY_COUNT
 from core.direct_retriever import (
     DirectResult,
     direct_retrieve_and_answer,
     warm_cross_encoder,
+    build_context_string,
+    generate_answer,
 )
 from core.embeddings import load_faiss_index, FaissIndex
 from core.tree import load_tree, create_node_map, TreeNode
@@ -86,10 +76,25 @@ def _load_faiss_cached(doc_id: str) -> FaissIndex | None:
     return _faiss_cache.get(doc_id)
 
 
-def _invalidate_cache(doc_id: str) -> None:
-    """Called when a document is re-ingested."""
-    _tree_cache.pop(doc_id, None)
-    _faiss_cache.pop(doc_id, None)
+def invalidate_doc_caches(doc_id: str) -> None:
+    """Invalidate in-memory tree and FAISS caches.
+
+    Parameters
+    ----------
+    doc_id : Document ID to invalidate, or "__all__" to clear everything.
+
+    Called automatically by the ingestion pipeline when a document is re-indexed,
+    and by the cache clear endpoint.
+    """
+    global _tree_cache, _faiss_cache
+    if doc_id == "__all__":
+        _tree_cache.clear()
+        _faiss_cache.clear()
+        logger.info("Invalidated all query-service caches.")
+    else:
+        _tree_cache.pop(doc_id, None)
+        _faiss_cache.pop(doc_id, None)
+        logger.info("Invalidated query-service caches for doc_id=%s", doc_id)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -166,41 +171,48 @@ def _try_cache_hit(
     Check the query cache and return a QueryResponse if there's a valid hit.
     Returns None on miss.
     """
+    import time
+    t0 = time.perf_counter()
+
     cache_hit = query_cache.get(query, doc_ids=target_ids)
     if cache_hit is None:
         return None
 
-    # Re-generate answer from cached node IDs (fresh LLM call, same retrieval).
-    merged_node_map: dict[str, TreeNode] = {}
-    sources: list[SourceCitation] = []
+    try:
+        # Re-generate answer from cached node IDs (fresh LLM call, same retrieval).
+        merged_node_map: dict[str, TreeNode] = {}
+        sources: list[SourceCitation] = []
 
-    for doc_id, filename, tree, _ in trees_and_indexes:
-        nm = create_node_map(tree)
-        merged_node_map.update(nm)
-        for nid in cache_hit.node_ids:
-            if nid in nm:
-                sources.append(SourceCitation(
-                    doc_id   = doc_id,
-                    node_id  = nid,
-                    title    = nm[nid].title,
-                    filename = filename,
-                ))
+        for doc_id, filename, tree, _ in trees_and_indexes:
+            nm = create_node_map(tree)
+            merged_node_map.update(nm)
+            for nid in cache_hit.node_ids:
+                if nid in nm:
+                    sources.append(SourceCitation(
+                        doc_id   = doc_id,
+                        node_id  = nid,
+                        title    = nm[nid].title,
+                        filename = filename,
+                    ))
 
-    from core.direct_retriever import _generate_answer, _build_context_string
-    context = _build_context_string(cache_hit.node_ids, merged_node_map)
-    answer  = _generate_answer(query, context)
+        context = build_context_string(cache_hit.node_ids, merged_node_map)
+        answer  = generate_answer(query, context)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    return QueryResponse(
-        status       = "success",
-        answer       = answer,
-        confidence   = "HIGH",
-        intent_type  = "LOOKUP",
-        search_focus = "",
-        gaps         = [],
-        sources      = sources,
-        thinking     = f"[Cache hit — age {cache_hit.age_s:.0f}s]\nNodes: {cache_hit.node_ids}",
-        elapsed_ms   = 0.0,
-    )
+        return QueryResponse(
+            status       = "success",
+            answer       = answer,
+            confidence   = "HIGH",
+            intent_type  = "LOOKUP",
+            search_focus = "",
+            gaps         = [],
+            sources      = sources,
+            thinking     = f"[Cache hit — age {cache_hit.age_s:.0f}s]\nNodes: {cache_hit.node_ids}",
+            elapsed_ms   = elapsed_ms,
+        )
+    except Exception as exc:
+        logger.warning("Cache hit reconstruction failed (%s). Treating as miss.", exc)
+        return None
 
 
 # ── Public service function ────────────────────────────────────────────────────
@@ -216,10 +228,6 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
     3. Run direct_retrieve_and_answer() — deterministic expansion + MMR + rerank.
     4. Store result in query cache.
     5. Return structured QueryResponse.
-
-    To restore the agent pipeline, replace step 3 with:
-        from core.agents.orchestrator import run_agents
-        agent_result = run_agents(request.query, trees_and_indexes, doc_titles)
     """
     import time
     t0 = time.perf_counter()
@@ -263,11 +271,12 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
                 elapsed_ms   = 0.0,
             )
 
-        # ── 3. Direct retrieval pipeline (agents bypassed) ────────────────────
+        # ── 3. Direct retrieval pipeline ──────────────────────────────────────
         result: DirectResult = direct_retrieve_and_answer(
             raw_query          = request.query,
             trees_and_indexes  = trees_and_indexes,
             top_k              = 5,
+            max_query_variants = max(2, min(6, MULTI_QUERY_COUNT)) if MULTI_QUERY_ENABLED else 1,
         )
 
         # ── 4. Build sources ──────────────────────────────────────────────────
@@ -294,9 +303,9 @@ async def answer_query(request: QueryRequest) -> QueryResponse:
             status       = "success",
             answer       = result.answer,
             confidence   = result.confidence,
-            intent_type  = "LOOKUP",    # direct retriever uses intent_hint internally
+            intent_type  = "LOOKUP",
             search_focus = f"[{result.query_variants[0]}]" if result.query_variants else "",
-            gaps         = [],          # populated by confidence evaluator in DirectResult
+            gaps         = result.gaps if hasattr(result, "gaps") else [],
             sources      = sources,
             thinking     = result.thinking,
             elapsed_ms   = elapsed_ms,

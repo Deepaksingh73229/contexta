@@ -81,7 +81,7 @@ export function UsersView() {
     )
 
     return (
-        <div className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8 animate-in fade-in duration-500">
+        <div className="w-full mx-auto space-y-8 animate-in fade-in duration-500">
 
             <PageHeader
                 title="User Management"

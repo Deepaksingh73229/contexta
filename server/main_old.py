@@ -52,7 +52,7 @@ app = FastAPI(
         "**Auth**: POST /auth/login → Bearer token → pass in Authorization header.\n\n"
         "**Roles**: admin · manager · analyst · viewer\n\n"
         "**Ingestion**: upload → background processing → SSE progress stream.\n\n"
-        "**Retrieval**: deterministic query expansion → hybrid scoring → MMR → cross-encoder rerank → grounded answer."
+        "**Retrieval**: Intent Agent → Planner → Parallel Retrieval → Synthesis Agent."
     ),
     version  = "4.0.0",
     lifespan = lifespan,

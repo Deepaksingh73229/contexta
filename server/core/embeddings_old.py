@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import pickle
-import threading
 from pathlib import Path
 
 import numpy as np
@@ -31,18 +30,12 @@ from config import EMBEDDING_MODEL, EMBEDDING_DIM, RETRIEVAL_STAGE1_TOP_N
 
 logger = logging.getLogger(__name__)
 
-# ── Singleton embedding model (thread-safe) ──────────────────────────────────
+# ── Singleton embedding model ──────────────────────────────────────────────────
 _model = None
-_model_lock = threading.Lock()
-
 
 def _get_model():
     global _model
-    if _model is not None:
-        return _model
-    with _model_lock:
-        if _model is not None:
-            return _model
+    if _model is None:
         try:
             from sentence_transformers import SentenceTransformer
             logger.info("Loading embedding model: %s", EMBEDDING_MODEL)

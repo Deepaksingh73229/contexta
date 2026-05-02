@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "app/page.jsx", "app/chat/page.jsx", "components/theme-toggle.jsx"  ],
+, "app/page.jsx", "app/chat/page.jsx", "components/theme-toggle.jsx", "components/sidebar/sidebar-footer.jsx"  ],
   "exclude": ["node_modules"]
 }

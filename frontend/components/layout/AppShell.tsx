@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { AuthGuard } from "@/lib/providers"
-import { AppSidebar } from "@/components/sidebar/app-sidebar"
+import {AppSidebar} from "@/components/sidebar/app-sidebar"
 import type { Permission } from "@/types"
 
 interface AppShellProps {

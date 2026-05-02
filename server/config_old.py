@@ -51,11 +51,11 @@ def _load_or_create_secret() -> str:
     env_secret = os.getenv("AUTH_SECRET_KEY")
     if env_secret:
         return env_secret
-
+        
     # 2. Fallback to reading from local file
     if _SECRET_KEY_FILE.exists():
         return _SECRET_KEY_FILE.read_text().strip()
-
+        
     # 3. Ultimate Fallback: Auto-generate, save, and secure the file
     key = secrets.token_hex(32)  # 256-bit secret
     _SECRET_KEY_FILE.write_text(key)
@@ -101,7 +101,8 @@ HYBRID_WEIGHT_METADATA: float = float(os.getenv("HYBRID_WEIGHT_METADATA", "0.20"
 RETRIEVAL_STAGE1_TOP_N: int = int(os.getenv("RETRIEVAL_STAGE1_TOP_N", "20"))
 RETRIEVAL_STAGE2_TOP_K: int = int(os.getenv("RETRIEVAL_STAGE2_TOP_K", "5"))
 
-# ── Multi-Query Expansion ─────────────────────────────────────────────────────
+# ── Query Rewriting ───────────────────────────────────────────────────────────
+QUERY_REWRITE_ENABLED: bool = get_bool("QUERY_REWRITE_ENABLED", True)
 MULTI_QUERY_COUNT:     int  = int(os.getenv("MULTI_QUERY_COUNT", "3"))
 MULTI_QUERY_ENABLED:   bool = get_bool("MULTI_QUERY_ENABLED", True)
 

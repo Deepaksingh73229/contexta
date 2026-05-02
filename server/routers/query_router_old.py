@@ -17,7 +17,7 @@ from models.schemas import (
     QueryRequest, QueryResponse,
 )
 from services.ingestion_service import read_all_meta
-from services.query_service import answer_query, invalidate_doc_caches
+from services.query_service import answer_query, _tree_cache, _faiss_cache
 from services import query_cache
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ async def query_endpoint(
     current_user: UserRecord = Depends(require_permission(Permission.QUERY_EXECUTE)),
 ) -> QueryResponse:
     """
-    Direct retrieval query pipeline.
+    Multi-agent query pipeline.
     Requires: query:execute (ALL roles: ADMIN, MANAGER, ANALYST, VIEWER)
     """
     logger.info("Query: user=%s  len=%d", current_user.username, len(request.query))
@@ -80,7 +80,8 @@ def clear_cache(
         qc._cache.clear()
         qc._access_order.clear()
         qc._save()
-    invalidate_doc_caches("__all__")
+    _tree_cache.clear()
+    _faiss_cache.clear()
     from auth.store import audit
     audit(current_user.user_id, "cache.clear", "Query cache cleared")
     return {"status": "success", "message": "Query cache and index cache cleared."}

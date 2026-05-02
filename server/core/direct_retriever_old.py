@@ -1,5 +1,9 @@
 """
-core/direct_retriever.py — Direct retrieval pipeline.
+core/direct_retriever.py — Improved direct retrieval pipeline (no agents).
+
+The agent pipeline (Intent → Planner → Synthesis Agent) is preserved in
+core/agents/ but is NOT called from this module. This module owns the full
+retrieval-to-answer flow independently.
 
 Pipeline
 --------
@@ -24,7 +28,7 @@ Design principles
 
 Public surface
 --------------
-  direct_retrieve_and_answer(query, trees_and_indexes, top_k, max_query_variants)
+  direct_retrieve_and_answer(query, trees_and_indexes, top_k)
       → DirectResult
 """
 
@@ -45,8 +49,6 @@ from config import (
     CONTEXT_DEDUP_THRESHOLD,
     EMBEDDING_DIM,
     MAX_CONTEXT_CHARS,
-    MULTI_QUERY_ENABLED,
-    MULTI_QUERY_COUNT,
     RERANKER_ENABLED,
     RERANKER_MODEL,
     RETRIEVAL_STAGE1_TOP_N,
@@ -612,7 +614,7 @@ _MIN_SCORE_TO_PROCEED = 0.22
 _MIN_CONTEXT_CHARS = 80
 
 
-def build_context_string(
+def _build_context_string(
     node_ids:  list[str],
     node_map:  dict[str, TreeNode],
 ) -> str:
@@ -705,7 +707,7 @@ Return ONLY valid JSON, no markdown:
 """
 
 
-def generate_answer(
+def _generate_answer(
     query:    str,
     context:  str,
 ) -> str:
@@ -760,7 +762,6 @@ def direct_retrieve_and_answer(
     raw_query:         str,
     trees_and_indexes: list[tuple[str, str, TreeNode, FaissIndex]],
     top_k:             int = RETRIEVAL_STAGE2_TOP_K,
-    max_query_variants: int | None = None,
 ) -> DirectResult:
     """
     Run the full direct retrieval pipeline for a query.
@@ -770,8 +771,6 @@ def direct_retrieve_and_answer(
     raw_query          : User's original question string.
     trees_and_indexes  : List of (doc_id, filename, TreeNode, FaissIndex).
     top_k              : Maximum nodes to include in the final context.
-    max_query_variants : Max number of query variants to generate. If None,
-                         uses MULTI_QUERY_COUNT from config (clamped 2–6).
 
     Returns
     -------
@@ -787,13 +786,6 @@ def direct_retrieve_and_answer(
             thinking   = "No documents available.",
         )
 
-    # Resolve max variants from config if not provided.
-    if max_query_variants is None:
-        if not MULTI_QUERY_ENABLED:
-            max_query_variants = 1
-        else:
-            max_query_variants = max(2, min(6, MULTI_QUERY_COUNT))
-
     # ── Stage 1: Preprocess ───────────────────────────────────────────────────
     t0 = time.perf_counter()
     pq = preprocess_query(raw_query)
@@ -801,7 +793,7 @@ def direct_retrieve_and_answer(
 
     # ── Stage 2: Expand queries ───────────────────────────────────────────────
     t0 = time.perf_counter()
-    query_variants = expand_query(pq, max_variants=max_query_variants)
+    query_variants = expand_query(pq, max_variants=4)
     stages["expand_ms"] = (time.perf_counter() - t0) * 1000
 
     # ── Stage 3: Embed all variants and beam-search all docs ──────────────────
@@ -814,6 +806,16 @@ def direct_retrieve_and_answer(
     # Fuse by max score: node_id → (best_score, doc_id, filename, TreeNode)
     fused: dict[str, tuple[float, str, str, TreeNode]] = {}
 
+    for (doc_id, filename, tree, faiss_index), query_vec in [
+        (combo, vec)
+        for combo in trees_and_indexes
+        for vec in all_vecs
+    ]:
+        # Re-pair: iterate docs × variants in the correct order.
+        pass  # fixed below
+
+    # Correct nested iteration: for each doc, for each variant.
+    fused = {}
     for doc_id, filename, tree, faiss_index in trees_and_indexes:
         node_map_doc = create_node_map(tree)
         for query_vec in all_vecs:
@@ -892,7 +894,7 @@ def direct_retrieve_and_answer(
 
     # ── Stage 8: Context assembly ─────────────────────────────────────────────
     t0 = time.perf_counter()
-    context = build_context_string(enriched_ids, merged_node_map)
+    context = _build_context_string(enriched_ids, merged_node_map)
     stages["context_ms"] = (time.perf_counter() - t0) * 1000
 
     if not context or len(context.strip()) < _MIN_CONTEXT_CHARS:
@@ -905,7 +907,7 @@ def direct_retrieve_and_answer(
 
     # ── Stage 9: Answer generation ────────────────────────────────────────────
     t0 = time.perf_counter()
-    answer = generate_answer(pq.raw, context)
+    answer = _generate_answer(pq.raw, context)
     stages["llm_answer_ms"] = (time.perf_counter() - t0) * 1000
 
     # ── Confidence evaluation ─────────────────────────────────────────────────
@@ -967,7 +969,7 @@ def _build_trace(
     note:           str = "",
 ) -> str:
     lines = [
-        "[Direct Retriever]",
+        "[Direct Retriever — No Agents]",
         f"  Intent hint  : {pq.intent_hint}",
         f"  Expanded query: {pq.expanded}",
         f"  Query variants ({len(variants)}):",

@@ -3,13 +3,10 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-    MessageSquare, Upload, FileText, Users, ClipboardList,
-    Settings, LogOut, Moon, Sun, ChevronLeft, Database,
+    MessagesSquare, Upload, FileText, Users, ClipboardList, LogOut, Moon, Sun, ChevronLeft, Database,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
     Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -41,9 +38,24 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     const activeTasks = useAppSelector(selectActiveTasks)
 
     const navItems: NavItem[] = [
-        { href: "/dashboard", label: "Ask Contexta", icon: MessageSquare },
-        canUpload && { href: "/upload", label: "Upload", icon: Upload, badge: activeTasks.length || undefined },
-        canViewDocs && { href: "/documents", label: "Documents", icon: FileText },
+        {
+            href: "/dashboard",
+            label: "Ask Contexta",
+            icon: MessagesSquare
+        },
+
+        canUpload && {
+            href: "/upload",
+            label: "Upload",
+            icon: Upload,
+            badge: activeTasks.length || undefined
+        },
+
+        canViewDocs && { 
+            href: "/documents", 
+            label: "Documents", 
+            icon: FileText 
+        },
     ].filter(Boolean) as NavItem[]
 
     const adminItems: NavItem[] = [
@@ -59,12 +71,12 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
             <aside
                 className={cn(
                     "flex h-full flex-col bg-transparent transition-all duration-300 ease-out z-10",
-                    collapsed ? "w-[72px]" : "w-64", // Slightly wider for a premium feel
+                    collapsed ? "w-20" : "w-64", // Slightly wider for a premium feel
                 )}
             >
                 {/* ── Logo Area ───────────────────────────────────────────── */}
                 <div className={cn(
-                    "flex h-16 items-center px-4 mb-2 mt-1",
+                    "flex h-16 items-center px-4 mb-2",
                     collapsed ? "justify-center px-0" : "justify-between"
                 )}>
                     {!collapsed && (
@@ -72,16 +84,19 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
                             <div className="flex items-center justify-center size-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-md shadow-violet-500/20 group-hover:shadow-violet-500/40 transition-all duration-300">
                                 <Database className="size-4.5 text-white" />
                             </div>
+
                             <span className="font-bold text-lg tracking-tight text-neutral-900 dark:text-white">
                                 Contexta
                             </span>
                         </Link>
                     )}
+
                     {collapsed && (
                         <Link href="/dashboard" className="flex items-center justify-center size-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-md shadow-violet-500/20 hover:shadow-violet-500/40 transition-all duration-300">
                             <Database className="size-5 text-white" />
                         </Link>
                     )}
+
                     {!collapsed && (
                         <Button
                             variant="ghost"

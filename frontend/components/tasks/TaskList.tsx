@@ -44,7 +44,7 @@ export function TaskList() {
     }
 
     return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+        <div className="grid grid-cols-3 gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
             {tasks.map((task) => (
                 <TaskCard key={task.task_id} taskId={task.task_id} />
             ))}

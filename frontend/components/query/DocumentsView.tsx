@@ -3,19 +3,17 @@
 import { useEffect, useState } from "react"
 import {
     FileText, RefreshCw, Trash2, Database,
-    BarChart2, Clock, Zap, Cpu, Terminal
+    Zap, Terminal, Layers, Box
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
 import { PageHeader } from "@/components/shared/PageHeader"
 import { EmptyState } from "@/components/shared/EmptyState"
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog"
 import { useQuery } from "@/lib/hooks"
 import { usePermission } from "@/lib/hooks"
 import { useToast } from "@/components/ui/use-toast"
-import { formatBytes } from "@/utils"
 import { cn } from "@/utils/cn"
 
 export function DocumentsView() {
@@ -42,8 +40,7 @@ export function DocumentsView() {
     const totalNodes = documents.reduce((acc, d) => acc + d.nodes, 0)
 
     return (
-        <div className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 space-y-10">
-
+        <div className="max-w-6xl mx-auto space-y-8">
             <PageHeader
                 title="Knowledge Base"
                 description="Manage your ingested institutional data and vector store metrics."
@@ -53,10 +50,17 @@ export function DocumentsView() {
                         size="sm"
                         onClick={refreshDocuments}
                         disabled={isLoading}
-                        className="h-9 gap-2 rounded-full border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all shadow-sm"
+                        className={cn(
+                            "h-9 gap-2 rounded-full transition-all duration-300 shadow-sm group",
+                            "border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md",
+                            "hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700"
+                        )}
                     >
-                        <RefreshCw className={cn("size-3.5 text-neutral-500", isLoading && "animate-spin text-violet-500")} />
-                        <span className="text-[13px] font-medium">Sync Data</span>
+                        <RefreshCw className={cn(
+                            "size-3.5 text-zinc-500 transition-colors group-hover:text-zinc-700 dark:group-hover:text-zinc-300",
+                            isLoading && "animate-spin text-violet-500 dark:text-violet-400"
+                        )} />
+                        <span className="text-[12px] font-bold tracking-wide">Sync Data</span>
                     </Button>
                 }
             />
@@ -68,31 +72,37 @@ export function DocumentsView() {
                     label="Ingested Files"
                     value={String(documents.length)}
                     iconColor="text-blue-500"
-                    iconBg="bg-blue-500/10"
+                    valueColor="text-blue-500/30"
+                    iconBg="bg-blue-500/10 border-blue-500/20"
                 />
+
                 <StatCard
-                    icon={Database}
-                    label="Total Vector Nodes"
+                    icon={Layers}
+                    label="Vector Nodes"
                     value={String(totalNodes)}
                     iconColor="text-violet-500"
-                    iconBg="bg-violet-500/10"
+                    valueColor="text-violet-500/30"
+                    iconBg="bg-violet-500/10 border-violet-500/20"
                 />
+
                 {canViewCache && cacheStats && (
                     <StatCard
                         icon={Zap}
                         label="Cache Utilization"
                         value={`${cacheStats.entries} / ${cacheStats.max_entries}`}
-                        iconColor="text-amber-500"
-                        iconBg="bg-amber-500/10"
+                        iconColor="text-emerald-500"
+                        valueColor="text-emerald-500/30"
+                        iconBg="bg-emerald-500/10 border-emerald-500/20"
                     />
                 )}
             </div>
 
             {/* ── Document List ────────────────────────────────────────────────── */}
             <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                    <Database className="size-4 text-neutral-400 dark:text-neutral-500" />
-                    <h2 className="text-[13px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">
+                <div className="flex items-center gap-2 px-1">
+                    <Database className="size-4 text-zinc-400 dark:text-zinc-500" />
+
+                    <h2 className="text-[13px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
                         Indexed Documents
                     </h2>
                 </div>
@@ -100,48 +110,50 @@ export function DocumentsView() {
                 {isLoading && documents.length === 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {[1, 2, 3, 4].map((i) => (
-                            <Skeleton key={i} className="h-20 w-full rounded-2xl bg-neutral-200/50 dark:bg-neutral-800/50" />
+                            <Skeleton key={i} className="h-[88px] w-full rounded-2xl bg-zinc-200/50 dark:bg-zinc-800/50" />
                         ))}
                     </div>
                 ) : documents.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/20">
+                    <div className="rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/20">
                         <EmptyState
-                            icon={FileText}
+                            icon={Box}
                             title="Vector store is empty"
-                            description="Upload PDFs from the Upload page to start building Contexta's knowledge base."
+                            description="Upload PDFs to start building Contexta's knowledge base."
                         />
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         {documents.map((doc) => (
                             <div
                                 key={doc.doc_id}
                                 className="
-                                    group flex items-center gap-4 p-4 rounded-2xl
-                                    bg-white/60 dark:bg-neutral-900/40 backdrop-blur-sm
-                                    ring-1 ring-inset ring-neutral-200/60 dark:ring-white/5
-                                    hover:bg-white dark:hover:bg-neutral-800/80
-                                    hover:ring-violet-200 dark:hover:ring-violet-500/30
-                                    hover:shadow-md hover:shadow-neutral-200/40 dark:hover:shadow-none
-                                    transition-all duration-300 ease-out
+                                    group flex items-center gap-4 p-4 rounded-2xl relative overflow-hidden
+                                    bg-white/80 dark:bg-[#121214]/80 backdrop-blur-xl
+                                    border border-zinc-200/60 dark:border-zinc-800/80
+                                    shadow-[0_4px_15px_rgb(0,0,0,0.02)] dark:shadow-[0_4px_15px_rgb(0,0,0,0.2)]
+                                    hover:-translate-y-0.5 transition-all duration-300 ease-out
                                 "
                             >
+                                {/* Hover Gradient Border Effect */}
+                                <div className="absolute inset-0 bg-gradient-to-br from-violet-500/0 to-fuchsia-500/0 group-hover:from-violet-500/5 group-hover:to-fuchsia-500/5 transition-colors duration-500 pointer-events-none" />
+                                <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-transparent group-hover:ring-violet-500/20 transition-all duration-500 pointer-events-none" />
+
                                 {/* Document Icon */}
-                                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900 shadow-inner group-hover:from-violet-100 group-hover:to-violet-200 dark:group-hover:from-violet-900/50 dark:group-hover:to-violet-800/50 transition-colors">
-                                    <FileText className="size-5 text-neutral-500 dark:text-neutral-400 group-hover:text-violet-600 dark:group-hover:text-violet-400" />
+                                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200/50 dark:border-zinc-700/50 shadow-sm transition-colors group-hover:border-violet-200 dark:group-hover:border-violet-500/30">
+                                    <FileText className="size-5 text-zinc-500 dark:text-zinc-400 group-hover:text-violet-500 transition-colors" />
                                 </div>
 
                                 {/* Meta */}
-                                <div className="min-w-0 flex-1">
-                                    <p className="truncate text-[14px] font-semibold text-neutral-900 dark:text-neutral-100 mb-0.5">
+                                <div className="min-w-0 flex-1 relative z-10">
+                                    <p className="truncate text-[14px] font-bold text-zinc-900 dark:text-white mb-1 tracking-tight">
                                         {doc.filename}
                                     </p>
-                                    <div className="flex items-center gap-2">
-                                        <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-mono tracking-wider bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                                    <div className="flex items-center gap-2.5">
+                                        <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-mono tracking-widest bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800">
                                             ID: {doc.doc_id.slice(0, 8)}
                                         </Badge>
-                                        <span className="text-[11px] font-medium text-neutral-400 dark:text-neutral-500">
-                                            • {doc.nodes} nodes
+                                        <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                                            {doc.nodes} nodes
                                         </span>
                                     </div>
                                 </div>
@@ -153,40 +165,48 @@ export function DocumentsView() {
 
             {/* ── Cache Management (Terminal Style) ────────────────────────────── */}
             {canViewCache && cacheStats && (
-                <div className="pt-4">
-                    <div className="relative overflow-hidden rounded-2xl bg-neutral-950 dark:bg-[#050505] ring-1 ring-inset ring-neutral-800 shadow-2xl">
+                <div className="">
+                    <div className="relative overflow-hidden rounded-2xl bg-neutral-100 dark:bg-neutral-950 ring-1 ring-inset ring-zinc-100 dark:ring-zinc-800 shadow-2xl shadow-black/40">
+                        {/* Top Glare */}
+                        <div className="absolute top-0 inset-x-0 h-px bg-linear-to-r from-transparent via-sky-800/50 to-transparent pointer-events-none" />
 
                         {/* Fake Mac Toolbar */}
-                        <div className="flex items-center gap-2 px-4 py-3 bg-neutral-900/80 border-b border-neutral-800">
+                        <div className="flex items-center gap-2 px-4 py-2.5 bg-neutral-200 dark:bg-neutral-900 border-b border-zinc-800/80">
                             <div className="flex gap-1.5">
-                                <div className="size-2.5 rounded-full bg-red-500/80" />
-                                <div className="size-2.5 rounded-full bg-amber-500/80" />
-                                <div className="size-2.5 rounded-full bg-green-500/80" />
+                                <div className="size-2.5 rounded-full bg-red-700/50 border border-red-600/50" />
+                                <div className="size-2.5 rounded-full bg-amber-700/50 border border-amber-600/50" />
+                                <div className="size-2.5 rounded-full bg-emerald-700/50 border border-emerald-600/50" />
                             </div>
-                            <div className="ml-2 flex items-center gap-1.5 text-neutral-500">
-                                <Terminal className="size-3.5" />
-                                <span className="text-[11px] font-mono uppercase tracking-widest">Query Cache Engine</span>
+
+                            <div className="flex items-center gap-1.5 text-zinc-500 absolute left-1/2 -translate-x-1/2">
+                                <Terminal className="size-3" />
+
+                                <span className="text-[10px] font-mono font-medium tracking-widest uppercase">
+                                    query_cache.exe
+                                </span>
                             </div>
                         </div>
 
                         {/* Stats Readout */}
-                        <div className="p-5 sm:p-6">
-                            <div className="grid grid-cols-2 gap-6 sm:grid-cols-4 mb-6">
-                                <TerminalStat label="Current Entries" value={cacheStats.entries} />
-                                <TerminalStat label="Max Allocation" value={cacheStats.max_entries.toLocaleString()} />
-                                <TerminalStat label="Time-to-Live (TTL)" value={`${Math.round(cacheStats.ttl_seconds / 86400)} days`} />
+                        <div className="flex flex-col gap-3 px-5 py-2.5 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900/40 to-neutral-900">
+                            <div className="grid grid-cols-3 gap-6 sm:grid-cols-4">
+                                <TerminalStat label="Current_Entries" value={cacheStats.entries} />
+                                <TerminalStat label="Max_Allocation" value={cacheStats.max_entries.toLocaleString()} />
+                                <TerminalStat label="TTL_Threshold" value={`${Math.round(cacheStats.ttl_seconds / 86400)}d`} />
+
                                 <div>
-                                    <p className="text-[11px] font-mono text-neutral-500 mb-1.5">System Status</p>
+                                    <p className="text-[10px] font-mono text-zinc-900 dark:text-zinc-500">System_Status</p>
+
                                     <Badge
                                         variant="outline"
                                         className={cn(
-                                            "h-6 px-2.5 font-mono text-[11px] border-0",
+                                            "h-5 px-2 font-mono text-[11px] tracking-widest border border-transparent shadow-none rounded-md",
                                             cacheStats.enabled
-                                                ? "bg-green-500/10 text-green-400"
-                                                : "bg-red-500/10 text-red-400"
+                                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                                : "bg-red-500/10 text-red-400 border-red-500/20"
                                         )}
                                     >
-                                        <div className={cn("size-1.5 rounded-full mr-2", cacheStats.enabled ? "bg-green-400 animate-pulse" : "bg-red-400")} />
+                                        <div className={cn("size-1.5 rounded-full", cacheStats.enabled ? "bg-emerald-400 animate-[pulse_2s_ease-in-out_infinite]" : "bg-red-400")} />
                                         {cacheStats.enabled ? "ACTIVE" : "OFFLINE"}
                                     </Badge>
                                 </div>
@@ -194,18 +214,19 @@ export function DocumentsView() {
 
                             {/* Action Area */}
                             {canManageCache && (
-                                <div className="flex items-center justify-between pt-5 border-t border-neutral-800/50">
-                                    <p className="text-[12px] text-neutral-500">
-                                        Clearing the cache forces the RAG pipeline to regenerate embeddings for subsequent queries.
+                                <div className="py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-zinc-800/50">
+                                    <p className="text-[11px] font-mono text-zinc-500 leading-relaxed max-w-lg">
+                                        &gt; Warning: Clearing the cache forces the RAG pipeline to regenerate embeddings for subsequent queries.
                                     </p>
+
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        className="h-8 gap-2 bg-transparent text-red-400 border-red-900/50 hover:bg-red-950/30 hover:text-red-300 transition-colors"
+                                        className="h-8 gap-2 bg-transparent text-red-400 border-red-900/50 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 transition-colors shrink-0 font-mono text-xs uppercase tracking-wider cursor-pointer"
                                         onClick={() => setClearConfirm(true)}
                                     >
                                         <Trash2 className="size-3.5" />
-                                        <span className="text-[12px] font-medium">Flush Cache</span>
+                                        Flush_Cache()
                                     </Button>
                                 </div>
                             )}
@@ -230,20 +251,25 @@ export function DocumentsView() {
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function StatCard({
-    icon: Icon, label, value, iconColor, iconBg
-}: { icon: React.ElementType; label: string; value: string; iconColor: string; iconBg: string; }) {
+    icon: Icon, label, value, iconColor, iconBg, valueColor
+}: { icon: React.ElementType; label: string; value: string; iconColor: string; valueColor: string; iconBg: string; }) {
     return (
-        <div className="relative overflow-hidden rounded-2xl bg-white/80 dark:bg-neutral-900/60 backdrop-blur-xl p-5 ring-1 ring-inset ring-neutral-200/60 dark:ring-white/10 shadow-sm hover:shadow-md transition-all duration-300 group">
-            {/* Soft background glow */}
-            <div className="absolute -top-10 -right-10 size-32 rounded-full bg-gradient-to-br from-violet-500/5 to-purple-500/5 blur-2xl group-hover:from-violet-500/10 transition-colors duration-500 pointer-events-none" />
+        <div className="relative overflow-hidden rounded-2xl bg-white/60 dark:bg-[#121214]/60 backdrop-blur-xl p-5 border border-zinc-200/60 dark:border-zinc-800/80 shadow-[0_4px_15px_rgb(0,0,0,0.02)] dark:shadow-[0_4px_15px_rgb(0,0,0,0.1)] group hover:-translate-y-0.5 transition-all duration-300">
+            {/* Top inner glare line for 3D realism */}
+            <div className="absolute top-0 inset-x-0 h-px bg-linear-to-r from-transparent via-sky-800 to-transparent rounded-t-2xl pointer-events-none" />
 
-            <div className="flex items-center gap-3 mb-4 relative z-10">
-                <div className={cn("flex size-8 items-center justify-center rounded-xl", iconBg, iconColor)}>
+            {/* Soft background glow */}
+            <div className="absolute -top-10 -right-10 size-32 rounded-full bg-zinc-500/5 blur-2xl group-hover:bg-sky-500/10 transition-colors duration-500 pointer-events-none" />
+
+            <div className="flex items-center gap-3">
+                <div className={cn("flex size-8 items-center justify-center rounded-lg border", iconBg, iconColor)}>
                     <Icon className="size-4" />
                 </div>
-                <span className="text-[12px] font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{label}</span>
+
+                <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{label}</span>
             </div>
-            <p className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white relative z-10">
+            
+            <p className={`text-5xl text-end font-black tracking-tight ${valueColor}`}>
                 {value}
             </p>
         </div>
@@ -253,8 +279,8 @@ function StatCard({
 function TerminalStat({ label, value }: { label: string, value: string | number }) {
     return (
         <div className="flex flex-col gap-1.5">
-            <p className="text-[11px] font-mono text-neutral-500">{label}</p>
-            <p className="text-lg font-mono text-neutral-200">{value}</p>
+            <p className="text-[10px] font-mono text-zinc-900 dark:text-zinc-500">{label}</p>
+            <p className="text-[15px] font-mono text-zinc-700 dark:text-zinc-300 font-semibold">{value}</p>
         </div>
     )
 }
