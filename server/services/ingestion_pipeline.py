@@ -50,6 +50,7 @@ from config import (
     MAX_SUMMARY_CHARS,
     SUMMARISE_WORKERS,
 )
+
 from core.builder import (
     build_tree,
     load_document_as_markdown,
@@ -57,6 +58,7 @@ from core.builder import (
     _SUMMARY_PROMPT,
     _SUMMARY_PROMPT_FALLBACK,
 )
+
 from core.embeddings import build_faiss_index, save_faiss_index, embed_batch
 from core.llm import call_llm
 from core.tree import TreeNode, save_tree, load_tree, _dict_to_node

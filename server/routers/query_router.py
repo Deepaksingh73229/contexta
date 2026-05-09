@@ -81,6 +81,8 @@ def clear_cache(
         qc._access_order.clear()
         qc._save()
     invalidate_doc_caches("__all__")
+
     from auth.store import audit
     audit(current_user.user_id, "cache.clear", "Query cache cleared")
+    
     return {"status": "success", "message": "Query cache and index cache cleared."}

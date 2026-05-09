@@ -123,5 +123,7 @@ MAX_PARALLEL_INGESTIONS: int = int(os.getenv("MAX_PARALLEL_INGESTIONS", "2"))
 SUMMARISE_WORKERS:       int = int(os.getenv("SUMMARISE_WORKERS", "3"))
 TASK_HISTORY_LIMIT:      int = int(os.getenv("TASK_HISTORY_LIMIT", "100"))
 
+QUERY_REWRITE_ENABLED = True
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 CORS_ORIGINS: list[str] = get_list("CORS_ORIGINS", ["http://localhost:3000"])
