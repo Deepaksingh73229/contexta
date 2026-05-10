@@ -53,11 +53,13 @@ _lock = threading.Lock()
 
 def _get_executor() -> ThreadPoolExecutor:
     global _executor
+
     if _executor is None:
         _executor = ThreadPoolExecutor(
             max_workers = MAX_PARALLEL_INGESTIONS,
             thread_name_prefix = "ingest-worker",
         )
+
     return _executor
 
 
@@ -81,10 +83,11 @@ def _make_progress_cb(task_id: str):
             current_node = kwargs.get("current_node"),
             eta_seconds  = kwargs.get("eta_seconds"),
         )
+
     return cb
 
 
-# ── Worker function ────────────────────────────────────────────────────────────
+# ── PDF Worker function ────────────────────────────────────────────────────────────
 
 def _run_task(task_id: str, doc_id: str, filename: str, resumed: bool = False) -> None:
     """
@@ -119,6 +122,46 @@ def _run_task(task_id: str, doc_id: str, filename: str, resumed: bool = False) -
             _cancel_flags.pop(task_id, None)
 
 
+# ── IMAGE: standalone image worker ────────────────────────────────────────────
+ 
+def _run_image_task(
+    task_id:    str,
+    doc_id:     str,
+    filename:   str,
+    image_path: Path,
+) -> None:
+    """Worker thread for standalone image ingestion."""
+    logger.info(
+        "Image worker started: task_id=%s  doc_id=%s  file=%s",
+        task_id, doc_id, filename,
+    )
+
+    task_store.mark_running(task_id)
+ 
+    cancel_flag = _cancel_flags.get(task_id, threading.Event())
+    progress_cb = _make_progress_cb(task_id)
+ 
+    try:
+        from services.ingestion_pipeline import run_image_pipeline
+        run_image_pipeline(
+            task_id     = task_id,
+            doc_id      = doc_id,
+            filename    = filename,
+            image_path  = image_path,
+            progress_cb = progress_cb,
+            cancelled   = cancel_flag,
+        )
+    except InterruptedError:
+        task_store.mark_cancelled(task_id)
+        logger.info("Image task cancelled: task_id=%s", task_id)
+    except Exception as exc:
+        task_store.mark_failed(task_id, str(exc))
+        logger.exception("Image task failed: task_id=%s", task_id)
+    finally:
+        with _lock:
+            _cancel_flags.pop(task_id, None)
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def submit(task_id: str, doc_id: str, filename: str) -> None:
@@ -136,6 +179,23 @@ def submit(task_id: str, doc_id: str, filename: str) -> None:
     logger.info("Task submitted: task_id=%s", task_id)
 
 
+# ── IMAGE: new submit for standalone images ───────────────────────────────────
+ 
+def submit_image(
+    task_id:    str,
+    doc_id:     str,
+    filename:   str,
+    image_path: Path,
+) -> None:
+    """Submit a standalone image ingestion task to the background worker pool."""
+    with _lock:
+        flag = threading.Event()
+        _cancel_flags[task_id] = flag
+
+    _get_executor().submit(_run_image_task, task_id, doc_id, filename, image_path)
+    logger.info("Image task submitted: task_id=%s  file=%s", task_id, filename)
+
+
 def startup_resume() -> None:
     """
     Re-queue any tasks that were interrupted when the process last died.
@@ -145,11 +205,13 @@ def startup_resume() -> None:
     stages using the checkpoint sidecar.
     """
     interrupted = task_store.get_interrupted()
+
     if not interrupted:
         logger.info("No interrupted tasks to resume.")
         return
 
     logger.info("Resuming %d interrupted task(s)...", len(interrupted))
+    
     for rec in interrupted:
         # Reset status to queued so the worker picks it up.
         task_store.update(rec.task_id, status="queued")

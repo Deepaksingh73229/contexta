@@ -23,6 +23,7 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 from config import MAX_SUMMARY_CHARS
 from core.llm import call_llm
+from core.prompt_registry import get_prompt
 from core.tree import TreeNode
 
 logger = logging.getLogger(__name__)
@@ -197,10 +198,16 @@ def summarize_tree(node: TreeNode) -> None:
 
     # Try rich structured prompt; fall back to simple if it fails.
     try:
-        prompt       = _SUMMARY_PROMPT.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+        # prompt       = _SUMMARY_PROMPT.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+        # node.summary = call_llm(prompt)
+
+        prompt       = get_prompt("node_summary", title=node.title, content=text[:MAX_SUMMARY_CHARS])
         node.summary = call_llm(prompt)
     except Exception:
-        prompt       = _SUMMARY_PROMPT_FALLBACK.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+        # prompt       = _SUMMARY_PROMPT_FALLBACK.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+        # node.summary = call_llm(prompt)
+
+        prompt       = get_prompt("node_summary_fallback", title=node.title, content=text[:MAX_SUMMARY_CHARS])
         node.summary = call_llm(prompt)
 
 

@@ -185,16 +185,30 @@ export const INTENT_ICONS: Record<IntentType, string> = {
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
 
-export function validatePDFFile(file: File): string | null {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-        return "Only PDF files are supported."
+const ALLOWED_FILE_TYPES = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+]
+
+export function validateFile(file: File): string | null {
+    // Check file type
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+        return "Only PDF and image files (PNG, JPG, JPEG, WEBP) are supported."
     }
+
+    // Check file size
     if (file.size > MAX_FILE_SIZE) {
         return `File is too large. Maximum size is ${formatBytes(MAX_FILE_SIZE)}.`
     }
+
+    // Check empty file
     if (file.size === 0) {
         return "File is empty."
     }
+
     return null
 }
 

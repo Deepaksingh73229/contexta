@@ -30,10 +30,16 @@ from fastapi import HTTPException, UploadFile, status
 from config import DOCS_DIR, TREE_DIR, MAX_UPLOAD_BYTES
 from models.schemas import TaskAcceptedResponse
 from services import task_manager, task_store
+from core.image_processor import SUPPORTED_IMAGE_CONTENT_TYPES, SUPPORTED_IMAGE_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
 _PDF_MAGIC: bytes = b"%PDF"
+
+# Allowed content-types (PDF + all image types)
+_ALLOWED_CONTENT_TYPES: set[str] = (
+    {"application/pdf", "application/octet-stream"} | SUPPORTED_IMAGE_CONTENT_TYPES
+)
 
 
 # ── Validation helpers ─────────────────────────────────────────────────────────
@@ -59,14 +65,18 @@ async def _read_with_size_limit(upload: UploadFile, limit: int) -> bytes:
 
     while True:
         chunk = await upload.read(CHUNK)
+
         if not chunk:
             break
+
         total += len(chunk)
+
         if total > limit:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"File exceeds the {limit // (1024 * 1024)} MB size limit.",
             )
+        
         chunks.append(chunk)
 
     return b"".join(chunks)
@@ -80,12 +90,14 @@ def _meta_path(doc_id: str) -> Path:
 
 def read_all_meta() -> list[dict]:
     results = []
+
     for meta_file in sorted(TREE_DIR.glob("*.meta.json")):
         try:
             data = json.loads(meta_file.read_text(encoding="utf-8"))
             results.append(data)
         except Exception as exc:
             logger.warning("Could not read meta file %s: %s", meta_file, exc)
+
     return results
 
 
@@ -104,37 +116,49 @@ async def enqueue_ingest(upload: UploadFile, content_type: str | None) -> TaskAc
     GET /api/tasks/{task_id} for live progress.
     """
     # ── 1. Content-Type ───────────────────────────────────────────────────────
-    if content_type not in ("application/pdf", "application/octet-stream"):
+    if content_type not in _ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only PDF uploads are accepted.",
+            detail=(
+                "Only PDF and image uploads are accepted. "
+                f"Supported image types: {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}"
+            ),
         )
 
-    # ── 2. Filename ───────────────────────────────────────────────────────────
+     # ── 2. Filename + file-type routing ───────────────────────────────────────
     original_name = _safe_filename(upload.filename)
-    if not original_name.lower().endswith(".pdf"):
+    suffix        = Path(original_name).suffix.lower()
+    is_image      = suffix in SUPPORTED_IMAGE_EXTENSIONS
+    is_pdf        = suffix == ".pdf"
+ 
+    if not is_pdf and not is_image:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF files are supported.",
+            detail=(
+                f"Unsupported file extension '{suffix}'. "
+                f"Supported: .pdf + {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}"
+            ),
         )
 
     # ── 3. Read with size cap ─────────────────────────────────────────────────
     raw_bytes = await _read_with_size_limit(upload, MAX_UPLOAD_BYTES)
 
-    # ── 4. Magic-byte validation ──────────────────────────────────────────────
-    _validate_pdf_magic(raw_bytes)
+    # ── 4. PDF magic-byte validation (images skip this) ───────────────────────
+    if is_pdf:
+        _validate_pdf_magic(raw_bytes)
 
-    # ── 5. Persist raw PDF permanently ───────────────────────────────────────
-    doc_id   = uuid.uuid4().hex
-    pdf_path = DOCS_DIR / f"{doc_id}.pdf"
+    # ── 5. Persist file permanently ───────────────────────────────────────
+    doc_id    = uuid.uuid4().hex
+    save_name = f"{doc_id}{suffix}"          # keeps original extension for images
+    save_path = DOCS_DIR / save_name
 
     try:
-        async with aiofiles.open(pdf_path, "wb") as fh:
+        async with aiofiles.open(save_path, "wb") as fh:
             await fh.write(raw_bytes)
         logger.info("PDF saved: doc_id=%s  original=%s  bytes=%d",
-                    doc_id, original_name, len(raw_bytes))
+                    doc_id, original_name, "image" if is_image else "pdf", len(raw_bytes))
     except Exception as exc:
-        pdf_path.unlink(missing_ok=True)
+        save_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save uploaded file.",
@@ -143,13 +167,21 @@ async def enqueue_ingest(upload: UploadFile, content_type: str | None) -> TaskAc
     # ── 6. Create task record ─────────────────────────────────────────────────
     rec = task_store.create(doc_id=doc_id, filename=original_name)
 
-    # Mark PDF as uploaded (stage 1 complete).
+    # Mark PDF or img as uploaded (stage 1 complete).
     task_store.mark_stage(rec.task_id, "uploaded", pct=5.0)
 
     # ── 7. Submit to background worker pool ──────────────────────────────────
-    task_manager.submit(rec.task_id, doc_id, original_name)
+    if is_image:
+        # Standalone image → dedicated image pipeline
+        task_manager.submit_image(rec.task_id, doc_id, original_name, save_path)
+    else:
+        # PDF → existing text pipeline (which also picks up embedded images via Stage 3b)
+        task_manager.submit(rec.task_id, doc_id, original_name)
 
-    logger.info("Ingestion enqueued: task_id=%s  doc_id=%s", rec.task_id, doc_id)
+    logger.info(
+        "Ingestion enqueued: task_id=%s  doc_id=%s  type=%s",
+        rec.task_id, doc_id, "image" if is_image else "pdf",
+    )
 
     return TaskAcceptedResponse(
         status   = "accepted",
