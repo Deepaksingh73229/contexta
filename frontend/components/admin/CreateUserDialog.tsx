@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/select"
 import { adminService } from "@/services"
 import { ROLE_LABELS } from "@/utils"
-import { cn } from "@/utils/cn"
 import type { AdminUser, Role } from "@/types"
 
 const ROLES: Role[] = ["admin", "manager", "analyst", "viewer"]

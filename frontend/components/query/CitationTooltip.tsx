@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { createPortal } from "react-dom"
 import { FileText, Download, ExternalLink, X, BookOpen, Layers } from "lucide-react"
 import { citationsService } from "@/services"

@@ -3,10 +3,8 @@
 import { useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { Sparkles, ChevronDown, Clock, FileText, Activity, AlertTriangle } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { Sparkles, ChevronDown, FileText, AlertTriangle } from "lucide-react"
 import { CitationTooltip } from "./CitationTooltip"
-import { citationsService } from "@/services"
 import type { QueryResponse } from "@/types"
 import { cn } from "@/utils/cn"
 
@@ -21,34 +19,13 @@ export function ContextaMessage({ content, result, timestamp, animationDelay = 0
     const [showSources, setShowSources] = useState(false)
     const time = new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 
-    const confidence = result?.confidence || "MEDIUM"
-    const intentType = result?.intent_type || "LOOKUP"
-    const elapsedMs = result?.elapsed_ms || 0
     const sources = result?.sources || []
     const gaps = result?.gaps || []
-
-    // Highly refined, high-contrast status styles
-    const confidenceStyles = {
-        HIGH: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20",
-        MEDIUM: "bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20",
-        LOW: "bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-500/20",
-    }
-
-    const intentLabels: Record<string, string> = {
-        LOOKUP: "Fact Lookup",
-        PROCEDURE: "Procedure",
-        DEFINITION: "Definition",
-        LIST: "List",
-        DATE: "Date Query",
-        PERSON: "Person Query",
-        COMPARISON: "Comparison",
-        GENERAL: "General",
-    }
 
     return (
         <div
             // Smooth physical entrance from the left
-            className="group/message-wrapper relative flex justify-start w-full animate-in fade-in slide-in-from-left-4 duration-500 ease-out fill-mode-both hover:z-50 transition-all"
+            className="group/message-wrapper relative flex justify-start w-full animate-in fade-in slide-in-from-left-4 duration-500 ease-out fill-mode-both transition-all"
             style={{ animationDelay: `${animationDelay}s` }}
         >
             {/* items-start aligns the avatar at the top of the message block */}
@@ -79,7 +56,7 @@ export function ContextaMessage({ content, result, timestamp, animationDelay = 0
                                     p-4 overflow-hidden
                                 ">
                                 {/* Left Accent Bar */}
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-amber-400 to-amber-600" />
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-linear-to-b from-amber-400 to-amber-600" />
 
                                 <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
                                 <div>

@@ -1,5 +1,8 @@
 'use client'
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/hooks';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
 import Features from '@/components/Features';
@@ -7,12 +10,22 @@ import HowItWorks from '@/components/HowItWorks';
 import Footer from '@/components/Footer';
 
 function App() {
-  // Note: In a real Next.js/React setup, you'd handle theme switching (light/dark)
-  // using a context provider like next-themes. This layout assumes that provider exists
-  // around it, enabling the 'dark:' tailwind classes to work.
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      router.replace('/dashboard');
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Prevent flash of landing page for authenticated users
+  if (isAuthenticated && !isLoading) {
+    return null;
+  }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50 font-sans antialiased">
+    <div className="min-h-screen text-neutral-950 dark:text-neutral-50 font-sans antialiased">
       <Navbar />
       <Hero />
       <Features />

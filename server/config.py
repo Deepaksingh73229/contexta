@@ -142,7 +142,7 @@ VISION_PROVIDER: str = os.getenv("VISION_PROVIDER", "ollama")   # "ollama" | "ge
 # ── Gemini API ─────────────────────────────────────────────────────────────────
 GEMINI_API_KEY:      str = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL:        str = os.getenv("GEMINI_MODEL",        "gemini-2.0-flash")
-GEMINI_VISION_MODEL: str = os.getenv("GEMINI_VISION_MODEL", "gemini-2.0-flash")
+GEMINI_VISION_MODEL: str = os.getenv("GEMINI_VISION_MODEL", "gemini-3-flash-preview")
 
 # ── Image Ingestion ────────────────────────────────────────────────────────────
 IMAGE_INGESTION_ENABLED: bool = get_bool("IMAGE_INGESTION_ENABLED", True)

@@ -280,7 +280,7 @@ def describe_image_node(img: ImageNode) -> str:
         raw    = call_vision_llm(prompt, image_b64=image_b64, mime_type=mime_type)
     except Exception as exc:
         logger.warning(
-            "Vision LLM failed (model=%s, source=%s): %s", img.source, exc
+            "Vision LLM failed (model=%s, source=%s): %s", vision_model, img.source, exc
         )
         return ""
 

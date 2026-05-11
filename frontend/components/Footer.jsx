@@ -1,18 +1,5 @@
-import React from 'react';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import projectImg from "@/public/secure_server.svg"
-import {
-  BrainCircuit,
-  Github,
-  Linkedin,
-  Twitter,
-  Mail,
-  ArrowRight
-} from 'lucide-react';
 import Image from 'next/image';
+import projectImg from "@/public/secure_server.svg"
 
 const Footer = () => {
   return (

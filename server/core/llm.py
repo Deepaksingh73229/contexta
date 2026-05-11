@@ -211,14 +211,17 @@ def _call_gemini_vision(prompt: str, image_b64: str, *, mime_type: str = "image/
     import base64
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
+
         image_part = types.Part.from_bytes(
             data      = base64.b64decode(image_b64),
             mime_type = mime_type,
         )
+
         response = client.models.generate_content(
             model    = GEMINI_VISION_MODEL,
             contents = [image_part, prompt],
         )
+        
         return response.text.strip()
     except Exception as exc:
         logger.error("Gemini vision call failed: %s", exc)

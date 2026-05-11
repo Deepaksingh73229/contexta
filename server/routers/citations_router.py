@@ -18,14 +18,19 @@ router = APIRouter(prefix="/api/cite", tags=["Citations"])
 _PDF_MEDIA_TYPE = "application/pdf"
 
 
+import mimetypes
+
 def _resolve_doc(doc_id: str) -> Path:
     if not (len(doc_id) == 32 and doc_id.isalnum() and doc_id.islower()):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid document ID format.")
-    candidate = (DOCS_DIR / f"{doc_id}.pdf").resolve()
+    
+    candidates = list(DOCS_DIR.glob(f"{doc_id}.*"))
+    if not candidates:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+        
+    candidate = candidates[0].resolve()
     if not candidate.is_relative_to(DOCS_DIR.resolve()):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid document ID.")
-    if not candidate.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     return candidate
 
 
@@ -35,7 +40,7 @@ def serve_citation(
     current_user: UserRecord = Depends(get_current_user_for_embed),
 ) -> FileResponse:
     """
-    Stream PDF for inline browser rendering.
+    Stream PDF or image for inline browser rendering.
     Requires: citations:view (ALL roles)
     """
     if not has_permission(current_user.role, Permission.CITATIONS_VIEW):
@@ -44,7 +49,12 @@ def serve_citation(
             detail="Permission denied. Your role does not have 'citations:view' access.",
         )
 
-    pdf_path = _resolve_doc(doc_id)
+    doc_path = _resolve_doc(doc_id)
     logger.info("Citation: user=%s  doc_id=%s", current_user.username, doc_id)
-    return FileResponse(path=str(pdf_path), media_type=_PDF_MEDIA_TYPE,
+    
+    media_type, _ = mimetypes.guess_type(str(doc_path))
+    if not media_type:
+        media_type = "application/octet-stream"
+        
+    return FileResponse(path=str(doc_path), media_type=media_type,
                         headers={"Content-Disposition": "inline"})
