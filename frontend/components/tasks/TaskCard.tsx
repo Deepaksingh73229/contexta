@@ -1,9 +1,5 @@
-"use client"
-
-import { useEffect } from "react"
 import { FileText, X, Trash2, AlertCircle, CheckCircle2, Clock, Activity, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { cancelTask, deleteTask, selectTask } from "@/store/slices/tasksSlice"

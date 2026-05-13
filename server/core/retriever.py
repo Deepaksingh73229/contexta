@@ -1,19 +1,38 @@
 """
 core/retriever.py — Enterprise vectorless RAG retrieval pipeline.
 
-Fixes applied:
-  - BUG FIX (Image 2): Cross-encoder singleton now uses a threading.Lock to prevent
-    concurrent threads from each loading the model simultaneously. Previously, parallel
-    retrieval workers all saw _cross_encoder=None at the same time and each triggered
-    a HuggingFace download/load — causing 2–4x duplicate loads per query.
-  - BUG FIX (Image 1): generate_answer() and build_context() hardened against
-    out-of-context answers. Added a strict pre-check that aborts if context is thin.
+This module replaces the original LLM-based tree_search with a fully
+deterministic, fast, multi-signal retrieval pipeline:
+
+    Stage 1: Hierarchical beam search using FAISS embeddings
+    Stage 2: Hybrid re-scoring (semantic + BM25 + metadata)
+    Stage 3: Cross-encoder re-ranking (optional, high precision)
+    Stage 4: Multi-query result fusion (union + score merge)
+    Stage 5: Context building (dedup + merge + trim)
+
+The LLM is NEVER called during retrieval.  It is called only once at the end
+to generate the final grounded answer from the curated context.
+
+Key design principle
+--------------------
+  Retrieval system = decision-maker
+  LLM              = answer generator only
+
+Public surface
+--------------
+  retrieve_for_query(tree, faiss_index, query_vec, query_tokens, top_k)
+      → list[(node_id, score)]
+
+  retrieve_multi_query(tree, faiss_index, processed_query)
+      → list[(node_id, score)]          # fused, deduped, sorted
+
+  generate_answer(tree, node_ids, query)
+      → str
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 
 import numpy as np
 
@@ -34,74 +53,43 @@ from core.tree import TreeNode, create_node_map
 
 logger = logging.getLogger(__name__)
 
-# ── Cross-encoder singleton — thread-safe ──────────────────────────────────────
-# BUG FIX (Image 2): The original code had no lock around the singleton init.
-# With SUMMARISE_WORKERS=3 and parallel retrieval, multiple threads simultaneously
-# saw _cross_encoder=None and each triggered a full model load from disk/HuggingFace.
-# This explains the duplicate "Loading weights: 100%" lines in the terminal.
-# Solution: a threading.Lock ensures only ONE thread loads the model.
-
+# ── Cross-encoder singleton ────────────────────────────────────────────────────
 _cross_encoder = None
-_cross_encoder_lock = threading.Lock()
-
 
 def _get_cross_encoder():
     global _cross_encoder
-    # Fast path: model already loaded, no lock needed.
-    if _cross_encoder is not None:
-        return _cross_encoder
-
-    # Slow path: acquire lock so only ONE thread loads the model.
-    with _cross_encoder_lock:
-        # Double-checked locking: another thread may have loaded it while we waited.
-        if _cross_encoder is not None:
-            return _cross_encoder
-
-        if not RERANKER_ENABLED:
-            return None
-
+    if _cross_encoder is None and RERANKER_ENABLED:
         try:
             from sentence_transformers import CrossEncoder
-            logger.info("Loading cross-encoder (once): %s", RERANKER_MODEL)
+            logger.info("Loading cross-encoder: %s", RERANKER_MODEL)
             _cross_encoder = CrossEncoder(RERANKER_MODEL)
-            logger.info("Cross-encoder ready and cached in memory.")
+            logger.info("Cross-encoder ready.")
         except Exception as exc:
-            logger.warning(
-                "Cross-encoder unavailable (%s). Stage-3 rerank disabled.", exc
-            )
+            logger.warning("Cross-encoder unavailable (%s). Stage-2 rerank disabled.", exc)
             _cross_encoder = None
-
     return _cross_encoder
 
 
 # ── Answer generation prompt ───────────────────────────────────────────────────
-# BUG FIX (Image 1): Strengthened the grounding rules. The previous prompt allowed
-# the LLM too much freedom. Added:
-#   - Explicit "STOP" instruction if context is insufficient.
-#   - Prohibition on combining retrieved facts with training knowledge.
-#   - Requirement to quote section titles for every specific claim.
 
 _ANSWER_PROMPT = """\
 You are Contexta, a precise institutional knowledge assistant.
+Answer the question using ONLY the document excerpts provided below.
+Do NOT use any knowledge from your training data.
 
-CRITICAL RULES — FOLLOW EXACTLY:
-1. Answer using ONLY the document excerpts provided below. Nothing else.
-2. Do NOT use any knowledge from your training data — not even to fill gaps.
-3. If the answer is NOT present in the excerpts, you MUST respond with exactly:
+Rules:
+1. If the answer is present, state it concisely and factually.
+2. If the answer cannot be found in the excerpts, respond with exactly:
    "I could not find this information in the available documents."
-4. Do NOT combine retrieved facts with assumed or inferred information.
-5. Do NOT guess, extrapolate, or paraphrase beyond what the text explicitly states.
-6. For every specific claim, cite the section: (→ Section Title).
-7. No filler phrases. No apologies. No preamble like "Based on the documents...".
-8. If the excerpts are only partially relevant, state only what IS confirmed, then
-   say: "The documents do not contain further details on this topic."
+3. Do not guess. Do not apologise at length. Do not add filler phrases.
+4. When the context supports an answer, cite the section title where possible.
 
 Question: {query}
 
 Document excerpts:
 {context}
 
-Answer (grounded strictly in the excerpts above):
+Answer:
 """
 
 
@@ -117,23 +105,29 @@ def _beam_search(
     """
     Hierarchical top-K beam search over the document tree.
 
-    Level 1 (chapters)    → keep top BEAM_TOP_K_L1
-    Level 2 (sections)    → keep top BEAM_TOP_K_L2 per surviving L1
-    Level 3 (subsections) → keep top BEAM_TOP_K_L3 per surviving L2
+    Level 1 (chapters)   → keep top BEAM_TOP_K_L1
+    Level 2 (sections)   → keep top BEAM_TOP_K_L2 per surviving L1
+    Level 3 (subsections)→ keep top BEAM_TOP_K_L3 per surviving L2
 
-    Returns list of node_id strings, unsorted.
+    Nodes without embeddings fall through to FAISS global search as fallback.
+
+    Returns
+    -------
+    List of node_id strings selected by beam search, unsorted.
     """
+    # Build a depth map: node_id → depth (root=0, children of root=1, ...)
     depth_map: dict[str, int] = {}
     _assign_depths(root, 0, depth_map)
 
+    # Fallback: if tree is shallow or embeddings missing, use FAISS top-N.
     all_nodes = root.all_nodes()
     embedded  = [n for n in all_nodes if n.embedding]
-
     if len(embedded) < 3:
-        logger.info("Beam search fallback: FAISS flat search (too few embedded nodes).")
+        logger.info("Beam search fallback: using FAISS flat search (too few embedded nodes).")
         results = faiss_index.search(query_vec, RETRIEVAL_STAGE1_TOP_N)
         return [nid for nid, _ in results]
 
+    # Level 1: score root's direct children.
     l1_candidates = _score_level(root.nodes, query_vec)[:BEAM_TOP_K_L1]
     if not l1_candidates:
         results = faiss_index.search(query_vec, RETRIEVAL_STAGE1_TOP_N)
@@ -173,7 +167,7 @@ def _score_level(nodes: list[TreeNode], query_vec: list[float]) -> list[tuple[Tr
             scored.append((node, 0.0))
             continue
         v = np.array(node.embedding, dtype="float32")
-        sim = float(np.dot(q, v))
+        sim = float(np.dot(q, v))   # vectors are normalised → cosine sim
         scored.append((node, sim))
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored
@@ -189,7 +183,11 @@ def _hybrid_score(
     query_vec:     list[float],
     query_tokens:  list[str],
 ) -> list[tuple[str, float]]:
-    """Re-score beam search candidates using the full hybrid scorer."""
+    """
+    Re-score beam search candidates using the full hybrid scorer.
+
+    Returns sorted (node_id, score) list.
+    """
     node_map   = create_node_map(tree)
     candidates = [node_map[nid] for nid in candidate_ids if nid in node_map]
 
@@ -213,7 +211,9 @@ def _cross_encoder_rerank(
     """
     Re-rank the top-N scored nodes using a cross-encoder.
 
-    Thread-safe: _get_cross_encoder() uses a lock so the model is loaded once.
+    The cross-encoder reads the full (query, content) pair — more accurate than
+    embedding similarity but too slow to run on all nodes.  We run it only on
+    the top RETRIEVAL_STAGE1_TOP_N candidates from Stage 2.
     """
     ce = _get_cross_encoder()
     if ce is None:
@@ -221,7 +221,7 @@ def _cross_encoder_rerank(
 
     candidates = scored[:RETRIEVAL_STAGE1_TOP_N]
     pairs = [
-        (query, node_map[nid].content[:1500])
+        (query, node_map[nid].content[:1500])   # truncate to keep it fast
         for nid, _ in candidates
         if nid in node_map
     ]
@@ -237,7 +237,7 @@ def _cross_encoder_rerank(
         logger.debug("Cross-encoder reranked %d → top %d.", len(candidates), top_k)
         return [(nid, float(s)) for nid, s in reranked[:top_k]]
     except Exception as exc:
-        logger.warning("Cross-encoder prediction failed (%s). Falling back.", exc)
+        logger.warning("Cross-encoder prediction failed (%s). Falling back to hybrid scores.", exc)
         return candidates[:top_k]
 
 
@@ -254,12 +254,30 @@ def retrieve_for_query(
 ) -> list[tuple[str, float]]:
     """
     Full single-query retrieval pipeline.
+
     Steps: beam search → hybrid score → cross-encoder rerank.
+
+    Parameters
+    ----------
+    tree        : Document TreeNode with embeddings populated.
+    faiss_index : Pre-built FaissIndex for this document.
+    query_vec   : Normalised embedding of the query string.
+    query       : Raw query string (for cross-encoder).
+    top_k       : Final number of nodes to return.
+
+    Returns
+    -------
+    List of (node_id, score) sorted highest-first.
     """
     query_tokens = _tokenise(query)
 
+    # Stage 1: beam search
     beam_ids = _beam_search(tree, faiss_index, query_vec)
-    scored   = _hybrid_score(tree, beam_ids, query_vec, query_tokens)
+
+    # Stage 2: hybrid scoring
+    scored = _hybrid_score(tree, beam_ids, query_vec, query_tokens)
+
+    # Stage 3: cross-encoder rerank
     node_map = create_node_map(tree)
     final    = _cross_encoder_rerank(node_map, scored, query, top_k)
 
@@ -281,7 +299,21 @@ def retrieve_multi_query(
     top_k:          int = RETRIEVAL_STAGE2_TOP_K,
 ) -> list[tuple[str, float]]:
     """
-    Run retrieval for every query variant and fuse results (max-score union).
+    Run retrieval for every query variant and fuse results.
+
+    Fusion strategy: for each node_id, take the MAX score across all queries
+    (optimistic fusion — a node that scores high on any variant is kept).
+
+    Parameters
+    ----------
+    tree         : Document TreeNode.
+    faiss_index  : Pre-built FaissIndex.
+    all_queries  : List of query strings [rewritten] + variants.
+    top_k        : Final nodes to return after fusion.
+
+    Returns
+    -------
+    Fused (node_id, score) list, sorted descending, length ≤ top_k.
     """
     if not all_queries:
         return []
@@ -292,6 +324,7 @@ def retrieve_multi_query(
         query_vec = embed_text(query)
         results   = retrieve_for_query(tree, faiss_index, query_vec, query, top_k=top_k * 2)
         for node_id, score in results:
+            # Max-fusion: keep the highest score any query achieved for this node.
             if node_id not in fused_scores or score > fused_scores[node_id]:
                 fused_scores[node_id] = score
 
@@ -307,11 +340,6 @@ def retrieve_multi_query(
 #  CONTEXT BUILDING
 # =============================================================================
 
-# Minimum content quality threshold: if total context is very short,
-# we warn and let the synthesis agent return a "not found" answer.
-_MIN_USEFUL_CONTEXT_CHARS = 100
-
-
 def build_context(
     node_map:  dict[str, TreeNode],
     node_ids:  list[str],
@@ -319,16 +347,19 @@ def build_context(
     """
     Build the final LLM context string from retrieved nodes.
 
-    Steps:
-    1. Deduplicate by embedding similarity (> CONTEXT_DEDUP_THRESHOLD).
+    Steps
+    -----
+    1. Deduplicate: remove nodes whose content is near-duplicate of a
+       higher-ranked node (cosine sim > CONTEXT_DEDUP_THRESHOLD).
     2. Remove parent nodes when their child is already included.
     3. Join and truncate to MAX_CONTEXT_CHARS.
     """
+    # Collect valid nodes in ranked order.
     ordered = [node_map[nid] for nid in node_ids if nid in node_map]
     if not ordered:
         return ""
 
-    # Dedup by embedding similarity.
+    # Dedup by embedding similarity (if embeddings present).
     kept: list[TreeNode] = []
     kept_vecs: list[np.ndarray] = []
 
@@ -337,38 +368,34 @@ def build_context(
             kept.append(node)
             continue
         v = np.array(node.embedding, dtype="float32")
-        duplicate = any(
-            float(np.dot(v, kv)) >= CONTEXT_DEDUP_THRESHOLD
-            for kv in kept_vecs
-        )
+        duplicate = False
+        for kv in kept_vecs:
+            sim = float(np.dot(v, kv))
+            if sim >= CONTEXT_DEDUP_THRESHOLD:
+                duplicate = True
+                break
         if not duplicate:
             kept.append(node)
             kept_vecs.append(v)
 
-    # Remove parent if child already present.
+    # Remove parent if child already present (child is more specific).
     all_ids = {n.node_id for n in kept}
-    kept_ids_set: set[str] = set()
+    kept_ids_set = set()
     for node in kept:
+        # Check if any child of this node is already kept.
         child_ids = {c.node_id for c in node.nodes}
         if child_ids & all_ids:
-            continue
+            continue   # skip parent — child provides more specific context
         kept_ids_set.add(node.node_id)
 
     final = [n for n in kept if n.node_id in kept_ids_set] or kept
 
+    # Join with separators; truncate to budget.
     parts = [
         f"[{node.title}]\n{node.content}"
         for node in final
     ]
     context = "\n\n---\n\n".join(parts)[:MAX_CONTEXT_CHARS]
-
-    if len(context.strip()) < _MIN_USEFUL_CONTEXT_CHARS:
-        logger.warning(
-            "build_context: very thin context (%d chars) for %d nodes — "
-            "retrieval may have returned low-quality results.",
-            len(context.strip()), len(node_ids),
-        )
-
     return context
 
 
@@ -376,49 +403,20 @@ def build_context(
 #  ANSWER GENERATION
 # =============================================================================
 
-# Minimum cosine similarity threshold: if the top retrieved node scores below
-# this against the query embedding, the context is likely irrelevant and we
-# should refuse to answer rather than hallucinate.
-_MIN_RETRIEVAL_SCORE_THRESHOLD = 0.25
-
-
 def generate_answer(
     node_map:  dict[str, TreeNode],
     node_ids:  list[str],
     query:     str,
-    top_scores: list[tuple[str, float]] | None = None,
 ) -> str:
     """
     Generate a grounded answer from the retrieved nodes.
 
-    BUG FIX (Image 1): Added relevance gate — if retrieval scores are all very low,
-    we return "not found" immediately without calling the LLM, preventing the model
-    from filling the gap with training-data hallucinations.
-
-    Parameters
-    ----------
-    node_map   : node_id → TreeNode lookup for all available nodes.
-    node_ids   : Ordered list of retrieved node IDs (highest relevance first).
-    query      : Raw query string.
-    top_scores : Optional (node_id, score) pairs from retrieval — used to gate
-                 on relevance before calling the LLM.
+    The LLM receives only the curated context — it never sees the tree index.
     """
     from core.llm import call_llm
 
-    # Relevance gate: if the best retrieval score is too low, the context is
-    # likely off-topic — don't let the LLM fill in from its training data.
-    if top_scores:
-        best_score = max(s for _, s in top_scores) if top_scores else 0.0
-        if best_score < _MIN_RETRIEVAL_SCORE_THRESHOLD:
-            logger.warning(
-                "Relevance gate triggered: best retrieval score %.3f < threshold %.3f. "
-                "Returning 'not found' to prevent hallucination.",
-                best_score, _MIN_RETRIEVAL_SCORE_THRESHOLD,
-            )
-            return "I could not find this information in the available documents."
-
     context = build_context(node_map, node_ids)
-    if not context or len(context.strip()) < _MIN_USEFUL_CONTEXT_CHARS:
+    if not context:
         return "I could not find this information in the available documents."
 
     prompt = _ANSWER_PROMPT.format(query=query, context=context)

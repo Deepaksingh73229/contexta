@@ -50,13 +50,17 @@ from config import (
     MAX_SUMMARY_CHARS,
     SUMMARISE_WORKERS,
 )
+
+from core.prompt_registry import get_prompt
+
 from core.builder import (
     build_tree,
     load_document_as_markdown,
     _has_meaningful_content,
-    _SUMMARY_PROMPT,
-    _SUMMARY_PROMPT_FALLBACK,
+    # _SUMMARY_PROMPT,
+    # _SUMMARY_PROMPT_FALLBACK,
 )
+
 from core.embeddings import build_faiss_index, save_faiss_index, embed_batch
 from core.llm import call_llm
 from core.tree import TreeNode, save_tree, load_tree, _dict_to_node
@@ -79,10 +83,12 @@ def _write_checkpoint(doc_id: str, stage: str, tree: TreeNode, nodes_done: int, 
         "total_nodes": total_nodes,
         "tree_partial": tree.to_dict(include_content=True, include_embedding=True),
     }
+
     _checkpoint_path(doc_id).write_text(
         json.dumps(cp, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
     logger.debug("Checkpoint written: doc_id=%s  stage=%s  nodes=%d/%d",
                  doc_id, stage, nodes_done, total_nodes)
 
@@ -90,8 +96,10 @@ def _write_checkpoint(doc_id: str, stage: str, tree: TreeNode, nodes_done: int, 
 def _load_checkpoint(doc_id: str) -> dict | None:
     """Load the checkpoint sidecar if it exists."""
     path = _checkpoint_path(doc_id)
+
     if not path.exists():
         return None
+    
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -132,11 +140,14 @@ class _EtaEstimator:
     def avg_seconds_per_node(self) -> float:
         if not self._times:
             return 15.0   # fallback before we have any data
+        
         # Exponential moving average — recent nodes weighted more heavily.
         alpha   = 0.3
         result  = self._times[0]
+
         for t in self._times[1:]:
             result = alpha * t + (1 - alpha) * result
+
         return result
 
     @property
@@ -164,6 +175,7 @@ def _summarise_node(node: TreeNode) -> str | None:
             for child in node.nodes
             if child.summary
         )
+
         text = (
             f"{node.content}\n\nChild sections:\n{children_text}"
             if has_content
@@ -173,11 +185,13 @@ def _summarise_node(node: TreeNode) -> str | None:
         text = node.content
 
     try:
-        prompt = _SUMMARY_PROMPT.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+        # prompt = _SUMMARY_PROMPT.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+        prompt = get_prompt("node_summary", title=node.title, content=text[:MAX_SUMMARY_CHARS])
         return call_llm(prompt)
     except Exception:
         try:
-            prompt = _SUMMARY_PROMPT_FALLBACK.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+            # prompt = _SUMMARY_PROMPT_FALLBACK.format(title=node.title, content=text[:MAX_SUMMARY_CHARS])
+            prompt = get_prompt("node_summary_fallback", title=node.title, content=text[:MAX_SUMMARY_CHARS])
             return call_llm(prompt)
         except Exception as exc:
             logger.warning("Summary failed for node %s: %s", node.node_id, exc)
@@ -262,6 +276,7 @@ def _parallel_summarise(
                     current_node = node.title[:60],
                     eta_seconds  = eta.eta_seconds,
                 )
+
                 progress_cb(
                     pct          = summarise_pct,
                     stage        = "summarising",
@@ -366,6 +381,7 @@ def run_pipeline(
     else:
         markdown = load_document_as_markdown(pdf_path)
 
+
     # ── Stage 3: Build tree ───────────────────────────────────────────────────
     _check_cancel()
 
@@ -380,6 +396,36 @@ def run_pipeline(
 
     if tree is None:
         raise RuntimeError("No tree available after tree_built stage — this is a bug.")
+    
+
+    # ── IMAGE Stage 3b: Extract and describe PDF-embedded images (non-fatal) ──
+    _check_cancel()
+
+    if last_stage in ("tree_built",):
+        try:
+            from config import IMAGE_INGESTION_ENABLED
+            if IMAGE_INGESTION_ENABLED:
+                from core.image_processor import process_pdf_images
+                _cb(20.5, "extracting_images", current_node="Scanning PDF for images")
+                image_nodes = process_pdf_images(
+                    pdf_path      = pdf_path,
+                    doc_id        = doc_id,
+                    start_counter = tree.node_count(),
+                    cancelled     = cancelled,
+                    progress_cb   = _cb,
+                )
+                if image_nodes:
+                    tree.nodes.extend(image_nodes)
+                    total_nodes = tree.node_count()
+                    logger.info(
+                        "Added %d image nodes. Total nodes now: %d",
+                        len(image_nodes), total_nodes,
+                    )
+                    _write_checkpoint(doc_id, "tree_built", tree, 0, total_nodes)
+        except Exception as exc:
+            # Non-fatal: image failure must NEVER break the text pipeline
+            logger.warning("Image processing failed (text pipeline continues): %s", exc)
+
 
     # ── Stage 4: Summarise nodes (parallelised, per-node progress) ────────────
     _check_cancel()
@@ -478,3 +524,114 @@ def run_pipeline(
         _cb(100.0, "done", nodes=tree.node_count())
 
     logger.info("Pipeline complete: doc_id=%s  nodes=%d", doc_id, tree.node_count())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PATH B — Standalone image pipeline  (IMAGE new addition)
+# ═══════════════════════════════════════════════════════════════════════════════
+ 
+def run_image_pipeline(
+    task_id:     str,
+    doc_id:      str,
+    filename:    str,
+    image_path:  Path,
+    progress_cb: Callable,
+    cancelled:   threading.Event,
+) -> None:
+    """
+    Ingestion pipeline for a standalone uploaded image.
+ 
+    Skips markdown conversion and tree-building — creates a minimal
+    single-node tree, describes the image via vision LLM, then flows
+    through the standard embed → FAISS → save stages.
+ 
+    Stages reported to the frontend:
+      uploaded (5%) → processing_image (20%) → embedding (72%)
+      → indexing (85%) → saving (95%) → done (100%)
+    """
+    tree_path  = TREE_DIR / f"{doc_id}.json"
+    faiss_path = TREE_DIR / doc_id
+ 
+    def _cb(pct, stage, **kw): progress_cb(pct=pct, stage=stage, **kw)
+    def _check_cancel():
+        if cancelled.is_set(): raise InterruptedError("Task cancelled by user.")
+ 
+    # Stage 1: Mark uploaded
+    _check_cancel()
+    task_store.mark_stage(task_id, "uploaded", pct=5.0)
+    _cb(5.0, "uploaded")
+ 
+    # Stage 2: Build minimal root + describe image
+    _check_cancel()
+    _cb(20.0, "processing_image", current_node=f"Describing {filename}")
+ 
+    tree = TreeNode(title=filename, node_id="0000", content="")
+ 
+    try:
+        from core.image_processor import process_standalone_image_full
+        
+        image_nodes = process_standalone_image_full(
+            image_path  = image_path,
+            doc_id      = doc_id,
+            cancelled   = cancelled,
+            progress_cb = _cb,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Image description failed: {exc}") from exc
+ 
+    if not image_nodes:
+        raise RuntimeError(
+            "Vision LLM produced no usable description for the uploaded image. "
+            "Ensure your vision model is running: ollama pull llava:7b"
+        )
+ 
+    tree.nodes.extend(image_nodes)
+    logger.info("Standalone image: built %d node(s) for doc_id=%s", len(image_nodes), doc_id)
+ 
+    task_store.mark_stage(task_id, "tree_built", pct=70.0, total_nodes=tree.node_count())
+    _cb(70.0, "tree_built", total_nodes=tree.node_count())
+ 
+    # Stage 3: Embed  (image nodes already have .summary from vision LLM)
+    _check_cancel()
+    _cb(72.0, "embedding")
+    all_nodes = tree.all_nodes()
+    to_embed  = [n for n in all_nodes if n.summary and not n.embedding]
+    if to_embed:
+        embeddings = embed_batch([n.summary for n in to_embed])
+        for n, vec in zip(to_embed, embeddings):
+            n.embedding = vec
+    task_store.mark_stage(task_id, "embedded", pct=80.0)
+    _cb(80.0, "embedded")
+ 
+    # Stage 4: Build FAISS index
+    _check_cancel()
+    _cb(85.0, "indexing")
+    node_ids  = [n.node_id for n in all_nodes if n.embedding]
+    node_embs = [n.embedding for n in all_nodes if n.embedding]
+    if node_ids:
+        save_faiss_index(build_faiss_index(node_ids, node_embs), faiss_path)
+    task_store.mark_stage(task_id, "indexed", pct=90.0)
+    _cb(90.0, "indexed")
+ 
+    # Stage 5: Save
+    _check_cancel()
+    _cb(95.0, "saving")
+    save_tree(tree, tree_path)
+    meta = {"doc_id": doc_id, "filename": filename, "nodes": tree.node_count()}
+    (TREE_DIR / f"{doc_id}.meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+    )
+    invalidate_doc(doc_id)
+    try:
+        from services.query_service import invalidate_doc_caches
+        invalidate_doc_caches(doc_id)
+    except Exception as exc:
+        logger.warning("Could not invalidate query-service caches: %s", exc)
+ 
+    task_store.mark_done(task_id, tree.node_count())
+    _cb(100.0, "done", nodes=tree.node_count())
+ 
+    logger.info(
+        "Image pipeline complete: doc_id=%s  filename=%s  nodes=%d",
+        doc_id, filename, tree.node_count(),
+    )

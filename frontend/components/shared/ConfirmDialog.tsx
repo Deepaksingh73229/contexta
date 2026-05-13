@@ -1,10 +1,8 @@
-"use client"
-
 import { AlertTriangle, HelpCircle } from "lucide-react"
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel,
     AlertDialogContent, AlertDialogDescription,
-    AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    AlertDialogFooter, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { cn } from "@/utils/cn"
 

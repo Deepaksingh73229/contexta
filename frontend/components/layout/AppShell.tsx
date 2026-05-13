@@ -17,10 +17,10 @@ export function AppShell({ children, requiredPermission }: AppShellProps) {
         <AuthGuard requiredPermission={requiredPermission}>
             {/* 
               1. Root Canvas
-              We use a very subtle off-white/pure-black background here.
+              We use a transparent background here to let the global background pattern show through.
               This acts as the "canvas" so the main content card pops out.
             */}
-            <div className="flex h-screen w-full overflow-hidden bg-[#FAFAFA] dark:bg-black selection:bg-violet-500/30">
+            <div className="flex h-screen w-full overflow-hidden bg-transparent selection:bg-violet-500/30">
 
                 {/* Sidebar functionality remains completely unchanged */}
                 <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />

@@ -123,5 +123,56 @@ MAX_PARALLEL_INGESTIONS: int = int(os.getenv("MAX_PARALLEL_INGESTIONS", "2"))
 SUMMARISE_WORKERS:       int = int(os.getenv("SUMMARISE_WORKERS", "3"))
 TASK_HISTORY_LIMIT:      int = int(os.getenv("TASK_HISTORY_LIMIT", "100"))
 
+QUERY_REWRITE_ENABLED = True
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 CORS_ORIGINS: list[str] = get_list("CORS_ORIGINS", ["http://localhost:3000"])
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# config.py — append these lines after the existing CORS block
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── LLM Provider toggle ────────────────────────────────────────────────────────
+# Defaults to "ollama" so zero changes needed for existing setups.
+LLM_PROVIDER:    str = os.getenv("LLM_PROVIDER",    "ollama")   # "ollama" | "gemini"
+VISION_PROVIDER: str = os.getenv("VISION_PROVIDER", "ollama")   # "ollama" | "gemini"
+
+# ── Gemini API ─────────────────────────────────────────────────────────────────
+GEMINI_API_KEY:      str = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL:        str = os.getenv("GEMINI_MODEL",        "gemini-2.0-flash")
+GEMINI_VISION_MODEL: str = os.getenv("GEMINI_VISION_MODEL", "gemini-3-flash-preview")
+
+# ── Image Ingestion ────────────────────────────────────────────────────────────
+IMAGE_INGESTION_ENABLED: bool = get_bool("IMAGE_INGESTION_ENABLED", True)
+VISION_MODEL:            str  = os.getenv("VISION_MODEL", "llava:7b")
+IMAGE_MIN_WIDTH:         int  = int(os.getenv("IMAGE_MIN_WIDTH",  "100"))
+IMAGE_MIN_HEIGHT:        int  = int(os.getenv("IMAGE_MIN_HEIGHT", "100"))
+IMAGE_MAX_PER_DOC:       int  = int(os.getenv("IMAGE_MAX_PER_DOC", "50"))
+IMAGE_DIR:               Path = BASE_DIR / os.getenv("IMAGE_DIR", "image_store")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# .env — three ready-to-use scenarios (uncomment the one you want)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Scenario A: fully offline (default — no changes needed) ───────────────────
+# LLM_PROVIDER=ollama
+# VISION_PROVIDER=ollama
+# OLLAMA_MODEL=gemma3:4b
+# VISION_MODEL=llava:7b
+
+# ── Scenario B: Gemini for text, llava for vision ─────────────────────────────
+# LLM_PROVIDER=gemini
+# VISION_PROVIDER=ollama
+# GEMINI_API_KEY=AIzaSy...
+# GEMINI_MODEL=gemini-2.0-flash
+# VISION_MODEL=llava:7b
+
+# ── Scenario C: Gemini for everything (no local GPU needed) ───────────────────
+# LLM_PROVIDER=gemini
+# VISION_PROVIDER=gemini
+# GEMINI_API_KEY=AIzaSy...
+# GEMINI_MODEL=gemini-2.0-flash
+# GEMINI_VISION_MODEL=gemini-2.0-flash

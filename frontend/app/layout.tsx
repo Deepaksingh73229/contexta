@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "next-themes"
 import { ReduxProvider } from "@/lib/providers"
+import { FallingPattern } from "@/components/backgrounds/FallingPattern"
 import { Toaster } from "@/components/ui/sonner" // Ensure this points to the Sonner Toaster we built
 import "./globals.css"
 
@@ -47,7 +48,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body
         className={`
-          min-h-screen bg-white dark:bg-[#0A0A0A] text-neutral-900 dark:text-neutral-50 
+          min-h-screen bg-background text-foreground 
           font-sans antialiased overflow-x-hidden
           selection:bg-violet-500/30 selection:text-violet-900 dark:selection:bg-violet-500/40 dark:selection:text-white
         `}
@@ -59,6 +60,11 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+            {/* Background Pattern */}
+            <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden text-primary dark:text-white/20">
+              <FallingPattern className="p-0" color="currentColor" />
+            </div>
+
             <div className="relative flex min-h-screen flex-col">
               {/* Optional: You can place a global TopNav or Sidebar here */}
               <main className="flex-1">

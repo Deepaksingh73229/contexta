@@ -5,6 +5,7 @@ import {
     FileText, RefreshCw, Trash2, Database,
     Zap, Terminal, Layers, Box
 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -134,12 +135,12 @@ export function DocumentsView() {
                                     hover:-translate-y-0.5 transition-all duration-300 ease-out
                                 "
                             >
-                                {/* Hover Gradient Border Effect */}
-                                <div className="absolute inset-0 bg-gradient-to-br from-violet-500/0 to-fuchsia-500/0 group-hover:from-violet-500/5 group-hover:to-fuchsia-500/5 transition-colors duration-500 pointer-events-none" />
+                                {/* Hover linear Border Effect */}
+                                <div className="absolute inset-0 bg-linear-to-br from-violet-500/0 to-fuchsia-500/0 group-hover:from-violet-500/5 group-hover:to-fuchsia-500/5 transition-colors duration-500 pointer-events-none" />
                                 <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-transparent group-hover:ring-violet-500/20 transition-all duration-500 pointer-events-none" />
 
                                 {/* Document Icon */}
-                                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200/50 dark:border-zinc-700/50 shadow-sm transition-colors group-hover:border-violet-200 dark:group-hover:border-violet-500/30">
+                                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200/50 dark:border-zinc-700/50 shadow-sm transition-colors group-hover:border-violet-200 dark:group-hover:border-violet-500/30">
                                     <FileText className="size-5 text-zinc-500 dark:text-zinc-400 group-hover:text-violet-500 transition-colors" />
                                 </div>
 
@@ -188,7 +189,7 @@ export function DocumentsView() {
                         </div>
 
                         {/* Stats Readout */}
-                        <div className="flex flex-col gap-3 px-5 py-2.5 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900/40 to-neutral-900">
+                        <div className="flex flex-col gap-3 px-5 py-2.5 bg-[radial-linear(ellipse_at_top,_var(--tw-linear-stops))] from-zinc-900/40 to-neutral-900">
                             <div className="grid grid-cols-3 gap-6 sm:grid-cols-4">
                                 <TerminalStat label="Current_Entries" value={cacheStats.entries} />
                                 <TerminalStat label="Max_Allocation" value={cacheStats.max_entries.toLocaleString()} />

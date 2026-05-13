@@ -19,6 +19,7 @@ export function UploadZone() {
                 description: `"${task.filename}" is securely in queue. Processing will begin shortly.`,
             })
         },
+
         onError: (msg) => {
             toast({ title: "Upload Failed", description: msg, variant: "destructive" })
         },
@@ -61,10 +62,10 @@ export function UploadZone() {
             <input
                 ref={inputRef}
                 type="file"
-                accept=".pdf,application/pdf"
+                accept=".png, .jpg, .jpeg, .pdf, application/pdf"
                 className="sr-only"
                 onChange={handleFileChange}
-                aria-label="Upload PDF Document"
+                aria-label="Upload Image or PDF Document"
             />
 
             {/* ── Icon Container ────────────────────────────────────────────── */}
@@ -102,8 +103,9 @@ export function UploadZone() {
                         <h3 className="text-[16px] font-bold text-neutral-900 dark:text-white tracking-tight">
                             {isDragging ? "Drop document here" : "Upload Institutional Data"}
                         </h3>
+
                         <p className="text-[13px] font-medium text-neutral-500 dark:text-neutral-400">
-                            Drag & drop a PDF, or click to browse files.
+                            Drag & drop Imgage or PDF, or click to browse files.
                         </p>
                     </>
                 )}
@@ -113,6 +115,7 @@ export function UploadZone() {
                         <h3 className="text-[16px] font-bold text-neutral-900 dark:text-white tracking-tight animate-pulse">
                             {state.phase === "validating" ? "Validating Document..." : "Uploading..."}
                         </h3>
+
                         <p className="text-[13px] font-medium text-violet-600 dark:text-violet-400 max-w-xs truncate">
                             {state.filename}
                         </p>
@@ -124,6 +127,7 @@ export function UploadZone() {
                         <h3 className="text-[16px] font-bold text-emerald-700 dark:text-emerald-400 tracking-tight">
                             Upload Successful
                         </h3>
+
                         <p className="text-[13px] font-medium text-emerald-600/80 dark:text-emerald-400/80 max-w-xs truncate">
                             "{state.task.filename}" is now processing.
                         </p>
@@ -135,6 +139,7 @@ export function UploadZone() {
                         <h3 className="text-[16px] font-bold text-rose-700 dark:text-rose-400 tracking-tight">
                             Upload Failed
                         </h3>
+
                         <p className="text-[13px] font-medium text-rose-600/80 dark:text-rose-400/80">
                             {state.message}
                         </p>
@@ -175,7 +180,7 @@ export function UploadZone() {
             {state.phase === "idle" && !isDragging && (
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center pointer-events-none">
                     <span className="text-[11px] font-medium tracking-wide text-neutral-400 dark:text-neutral-500 uppercase">
-                        PDF Format Only • Max Size 50MB
+                        Img & PDF Format Only • Max Size 50MB
                     </span>
                 </div>
             )}

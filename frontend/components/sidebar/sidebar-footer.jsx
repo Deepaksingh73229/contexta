@@ -1,5 +1,3 @@
-"use client"
-
 import Image from "next/image"
 import { LogOut, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"

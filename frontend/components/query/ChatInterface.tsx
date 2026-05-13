@@ -63,7 +63,7 @@ export function ChatInterface() {
                         currentQuery={currentQuery}
                         currentResult={currentResult}
                         isQuerying={isQuerying}
-                        status={status}
+                        status={status === "succeeded" ? "success" : status}
                     />
                 </div>
 

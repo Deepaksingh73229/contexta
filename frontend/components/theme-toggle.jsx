@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -15,9 +14,9 @@ export function ThemeToggle({ className }) {
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className={cn(
-                "relative h-10 w-10 rounded-xl bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800",
-                "text-zinc-600 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400",
-                "hover:bg-zinc-50 dark:hover:bg-zinc-900 shadow-sm transition-all duration-300",
+                "relative h-10 w-10 rounded-xl bg-neutral-100/20 dark:bg-neutral-500/20 border-neutral-500 dark:border-neutral-800",
+                "text-amber-700 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-amber-400",
+                "hover:bg-neutral-50 dark:hover:bg-neutral-900 shadow-sm transition-all duration-300",
                 "active:scale-95 overflow-hidden",
                 className
             )}

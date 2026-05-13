@@ -1,20 +1,10 @@
-"use client"
-
-import { Sparkles, ArrowRight, BookOpen } from "lucide-react"
-import { UserMessage } from "./UserMessage"
-import { ContextaMessage } from "./ContextaMessage"
-import { LoadingSkeleton } from "./LoadingSkeleton"
-import type { QueryResponse } from "@/types"
 import Image from "next/image"
 
 import hero from "@/public/undraw5.svg"
-
-interface HistoryEntry {
-    id: string
-    query: string
-    response: QueryResponse
-    timestamp: number
-}
+import type { QueryResponse } from "@/types"
+import { UserMessage } from "./UserMessage"
+import { ContextaMessage } from "./ContextaMessage"
+import { LoadingSkeleton } from "./LoadingSkeleton"
 
 interface ChatMessageListProps {
     messages: {

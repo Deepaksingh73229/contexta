@@ -163,8 +163,9 @@ const querySlice = createSlice({
     extraReducers: (builder) => {
         // ── runQuery ───────────────────────────────────────────
         builder
-            .addCase(runQuery.pending, (state) => {
+            .addCase(runQuery.pending, (state, action) => {
                 state.queryStatus = "loading"
+                state.currentQuery = action.meta.arg.query
                 state.queryError = null
                 state.currentResult = null
             })

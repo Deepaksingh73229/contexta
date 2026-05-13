@@ -10,7 +10,7 @@ import { useState, useCallback, useRef } from "react"
 import { useAppDispatch } from "@/store/hooks"
 import { addPendingTask } from "@/store/slices/tasksSlice"
 import { ingestService } from "@/services"
-import { validatePDFFile } from "@/utils"
+import { validateFile } from "@/utils"
 import type { TaskStatusResponse, TaskAcceptedResponse } from "@/types"
 
 export type UploadState =
@@ -54,7 +54,7 @@ export function useUpload(options: UseUploadOptions = {}) {
 
             // Validate
             setState({ phase: "validating", filename: file.name })
-            const validationError = validatePDFFile(file)
+            const validationError = validateFile(file)
             if (validationError) {
                 setState({ phase: "error", message: validationError })
                 options.onError?.(validationError)
